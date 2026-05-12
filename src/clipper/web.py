@@ -76,6 +76,7 @@ def build_app(work_dir: Path, out_root: Path | None = None) -> FastAPI:
     app = FastAPI()
     app.state.work_dir = work_dir
     app.state.clips = _initial_clips(work_dir)
+    app.state.should_exit = False
 
     @app.get("/api/clips")
     def list_clips() -> list[ClipState]:
@@ -129,5 +130,10 @@ def build_app(work_dir: Path, out_root: Path | None = None) -> FastAPI:
             except Exception as exc:
                 yield f"data: {json.dumps({'status': 'error', 'msg': str(exc)})}\n\n"
         return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    @app.post("/api/shutdown")
+    def shutdown():
+        app.state.should_exit = True
+        return {"status": "shutting down"}
 
     return app

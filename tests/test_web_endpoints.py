@@ -26,3 +26,10 @@ def test_get_transcript_returns_words_in_clip_window(fixture_work_dir: Path):
     # All words should fall within [5.0, 15.0]
     for w in words:
         assert 5.0 <= w["start"] < 15.0
+
+def test_shutdown_signals_exit(fixture_work_dir: Path):
+    app = build_app(fixture_work_dir)
+    client = TestClient(app)
+    r = client.post("/api/shutdown")
+    assert r.status_code == 200
+    assert app.state.should_exit is True
