@@ -6,6 +6,7 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from clipper.util.json_io import read_json, write_json
 from clipper.util.transcript import load_transcript, words_in_window
 
 DEFAULT_EFFECTS = {
@@ -39,7 +40,7 @@ class ClipUpdate(BaseModel):
     effects: dict[str, bool] | None = None
 
 def _initial_clips(work_dir: Path) -> dict[str, ClipState]:
-    ranked = json.loads((work_dir / "ranked.json").read_text())
+    ranked = read_json(work_dir / "ranked.json")
     base = {
         c["id"]: ClipState(
             id=c["id"],
@@ -55,7 +56,7 @@ def _initial_clips(work_dir: Path) -> dict[str, ClipState]:
     }
     state_path = work_dir / "review_state.json"
     if state_path.exists():
-        saved = json.loads(state_path.read_text())
+        saved = read_json(state_path)
         for cid, overrides in saved.get("clips", {}).items():
             if cid in base:
                 merged = base[cid].model_dump()
@@ -70,7 +71,7 @@ def _persist(work_dir: Path, clips: dict[str, ClipState]) -> None:
         "last_modified": datetime.now(timezone.utc).isoformat(),
         "clips": {cid: c.model_dump() for cid, c in clips.items()},
     }
-    (work_dir / "review_state.json").write_text(json.dumps(payload, indent=2))
+    write_json(work_dir / "review_state.json", payload)
 
 def build_app(work_dir: Path, out_root: Path | None = None) -> FastAPI:
     app = FastAPI()

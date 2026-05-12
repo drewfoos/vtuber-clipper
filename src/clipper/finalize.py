@@ -58,7 +58,7 @@ def finalize(work_dir: Path, out_root: Path) -> Path:
                 clean_path = base.with_suffix(".mp4")
             encode_clip(video, clip["t_start"], duration, clean_path, FINAL)
             srt_path = base.with_suffix(".srt")
-            srt_path.write_text(generate_srt(words, clip["t_start"]))
+            srt_path.write_text(generate_srt(words, clip["t_start"]), encoding="utf-8")
 
         manifest_clips.append({
             "filename": burned_path.name if burned_path else clean_path.name,
