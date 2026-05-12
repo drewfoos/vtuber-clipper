@@ -1,0 +1,60 @@
+frame:0    pts:0       pts_time:0
+lavfi.astats.Overall.RMS_level=-30.000
+frame:1    pts:11025   pts_time:0.25
+lavfi.astats.Overall.RMS_level=-29.500
+frame:2    pts:22050   pts_time:0.5
+lavfi.astats.Overall.RMS_level=-30.100
+frame:3    pts:33075   pts_time:0.75
+lavfi.astats.Overall.RMS_level=-29.800
+frame:4    pts:44100   pts_time:1.0
+lavfi.astats.Overall.RMS_level=-29.600
+frame:5    pts:55125   pts_time:1.25
+lavfi.astats.Overall.RMS_level=-30.000
+frame:6    pts:66150   pts_time:1.5
+lavfi.astats.Overall.RMS_level=-29.500
+frame:7    pts:77175   pts_time:1.75
+lavfi.astats.Overall.RMS_level=-29.700
+frame:8    pts:88200   pts_time:2.0
+lavfi.astats.Overall.RMS_level=-15.000
+frame:9    pts:99225   pts_time:2.25
+lavfi.astats.Overall.RMS_level=-12.500
+frame:10   pts:110250  pts_time:2.5
+lavfi.astats.Overall.RMS_level=-14.000
+frame:11   pts:121275  pts_time:2.75
+lavfi.astats.Overall.RMS_level=-29.300
+frame:12   pts:132300  pts_time:3.0
+lavfi.astats.Overall.RMS_level=-30.100
+frame:13   pts:143325  pts_time:3.25
+lavfi.astats.Overall.RMS_level=-29.900
+frame:14   pts:154350  pts_time:3.5
+lavfi.astats.Overall.RMS_level=-30.000
+frame:15   pts:165375  pts_time:3.75
+lavfi.astats.Overall.RMS_level=-29.600
+frame:16   pts:176400  pts_time:4.0
+lavfi.astats.Overall.RMS_level=-30.200
+frame:17   pts:187425  pts_time:4.25
+lavfi.astats.Overall.RMS_level=-29.700
+frame:18   pts:198450  pts_time:4.5
+lavfi.astats.Overall.RMS_level=-29.900
+frame:19   pts:209475  pts_time:4.75
+lavfi.astats.Overall.RMS_level=-29.500
+frame:20   pts:220500  pts_time:5.0
+lavfi.astats.Overall.RMS_level=-30.000
+frame:21   pts:231525  pts_time:5.25
+lavfi.astats.Overall.RMS_level=-29.800
+frame:22   pts:242550  pts_time:5.5
+lavfi.astats.Overall.RMS_level=-29.600
+frame:23   pts:253575  pts_time:5.75
+lavfi.astats.Overall.RMS_level=-29.900
+frame:24   pts:264600  pts_time:6.0
+lavfi.astats.Overall.RMS_level=-30.000
+frame:25   pts:275625  pts_time:6.25
+lavfi.astats.Overall.RMS_level=-29.700
+frame:26   pts:286650  pts_time:6.5
+lavfi.astats.Overall.RMS_level=-29.500
+frame:27   pts:297675  pts_time:6.75
+lavfi.astats.Overall.RMS_level=-29.800
+frame:28   pts:308700  pts_time:7.0
+lavfi.astats.Overall.RMS_level=-30.000
+frame:29   pts:319725  pts_time:7.25
+lavfi.astats.Overall.RMS_level=-29.600
