@@ -52,6 +52,13 @@ async function selectClip(id) {
   document.getElementById("t-start-input").value = clip.t_start.toFixed(3);
   document.getElementById("t-end-input").value = clip.t_end.toFixed(3);
   document.getElementById("caption-mode").value = clip.caption_mode;
+  document.getElementById("caption-style").value = clip.caption_style || "window3";
+
+  // Sync effect checkboxes.
+  for (const cb of document.querySelectorAll(".effect-toggle input[data-effect]")) {
+    const name = cb.dataset.effect;
+    cb.checked = clip.effects && clip.effects[name] !== false;
+  }
 
   const meta = document.getElementById("metadata");
   meta.replaceChildren();
@@ -100,6 +107,18 @@ document.getElementById("title-input").addEventListener("input", e => {
 document.getElementById("caption-mode").addEventListener("change", e => {
   patchClip({caption_mode: e.target.value});
 });
+document.getElementById("caption-style").addEventListener("change", e => {
+  patchClip({caption_style: e.target.value});
+});
+
+for (const cb of document.querySelectorAll(".effect-toggle input[data-effect]")) {
+  cb.addEventListener("change", e => {
+    const clip = state.clips.find(c => c.id === state.selectedId);
+    const next = { ...(clip.effects || {}), [e.target.dataset.effect]: e.target.checked };
+    patchClip({effects: next});
+  });
+}
+
 document.getElementById("keep-btn").addEventListener("click", () => patchClip({kept: true}));
 document.getElementById("drop-btn").addEventListener("click", () => patchClip({kept: false}));
 document.getElementById("t-start-input").addEventListener("change", e => {
