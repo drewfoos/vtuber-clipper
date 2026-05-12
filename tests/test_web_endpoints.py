@@ -78,3 +78,10 @@ def test_app_js_has_effect_toggle_handler(fixture_work_dir):
     assert "data-effect" in r.text
     assert "caption-style" in r.text
     assert "innerHTML" not in r.text   # XSS guard still holds
+
+def test_app_js_has_layout_handler(fixture_work_dir):
+    client = TestClient(build_app(fixture_work_dir))
+    r = client.get("/static/app.js")
+    assert r.status_code == 200
+    assert "layout-select" in r.text
+    assert "innerHTML" not in r.text

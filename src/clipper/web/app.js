@@ -53,6 +53,7 @@ async function selectClip(id) {
   document.getElementById("t-end-input").value = clip.t_end.toFixed(3);
   document.getElementById("caption-mode").value = clip.caption_mode;
   document.getElementById("caption-style").value = clip.caption_style || "window3";
+  document.getElementById("layout-select").value = clip.layout || "auto";
 
   // Sync effect checkboxes.
   for (const cb of document.querySelectorAll(".effect-toggle input[data-effect]")) {
@@ -109,6 +110,9 @@ document.getElementById("caption-mode").addEventListener("change", e => {
 });
 document.getElementById("caption-style").addEventListener("change", e => {
   patchClip({caption_style: e.target.value});
+});
+document.getElementById("layout-select").addEventListener("change", e => {
+  patchClip({layout: e.target.value});
 });
 
 for (const cb of document.querySelectorAll(".effect-toggle input[data-effect]")) {
