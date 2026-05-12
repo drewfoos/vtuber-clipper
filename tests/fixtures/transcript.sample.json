@@ -1,0 +1,42 @@
+{
+  "segments": [
+    {
+      "start": 5.0,
+      "end": 15.0,
+      "text": "holy no way that just happened",
+      "words": [
+        {"start": 5.0, "end": 5.3, "word": "holy"},
+        {"start": 5.4, "end": 5.7, "word": "no"},
+        {"start": 5.8, "end": 6.2, "word": "way"},
+        {"start": 6.3, "end": 6.6, "word": "that"},
+        {"start": 6.7, "end": 7.0, "word": "just"},
+        {"start": 7.1, "end": 7.6, "word": "happened"}
+      ]
+    },
+    {
+      "start": 20.0,
+      "end": 35.0,
+      "text": "i cannot believe what just happened on this stream",
+      "words": [
+        {"start": 20.0, "end": 20.3, "word": "i"},
+        {"start": 20.4, "end": 20.9, "word": "cannot"},
+        {"start": 21.0, "end": 21.6, "word": "believe"},
+        {"start": 21.7, "end": 22.0, "word": "what"},
+        {"start": 22.1, "end": 22.4, "word": "just"},
+        {"start": 22.5, "end": 23.1, "word": "happened"}
+      ]
+    },
+    {
+      "start": 40.0,
+      "end": 55.0,
+      "text": "the chat reaction is wild",
+      "words": [
+        {"start": 40.0, "end": 40.3, "word": "the"},
+        {"start": 40.4, "end": 40.7, "word": "chat"},
+        {"start": 40.8, "end": 41.6, "word": "reaction"},
+        {"start": 41.7, "end": 41.9, "word": "is"},
+        {"start": 42.0, "end": 42.6, "word": "wild"}
+      ]
+    }
+  ]
+}

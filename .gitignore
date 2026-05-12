@@ -7,3 +7,4 @@ out/
 .pytest_cache/
 *.egg-info/
 .coverage
+tests/fixtures/fixture_video.mp4

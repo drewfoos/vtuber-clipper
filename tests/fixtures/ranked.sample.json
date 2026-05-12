@@ -1,0 +1,47 @@
+[
+  {
+    "id": "c001",
+    "t_start_refined": 5.0,
+    "t_end_refined": 15.0,
+    "score": 87,
+    "hook_quality": 9,
+    "standalone": true,
+    "title": "HOLY NO WAY THAT JUST HAPPENED",
+    "reason": "Strong audio + chat reaction with clean sentence boundaries",
+    "signals": ["audio", "chat"],
+    "audio_intensity": 14.2,
+    "chat_hype_score": 87.3,
+    "msg_count": 142,
+    "top_emotes": ["KEKW", "LULW", "OMEGALUL"]
+  },
+  {
+    "id": "c002",
+    "t_start_refined": 20.0,
+    "t_end_refined": 35.0,
+    "score": 75,
+    "hook_quality": 6,
+    "standalone": true,
+    "title": "I cannot believe what just happened",
+    "reason": "Sustained chat reaction",
+    "signals": ["chat"],
+    "audio_intensity": 4.1,
+    "chat_hype_score": 65.0,
+    "msg_count": 88,
+    "top_emotes": ["LULW", "POG"]
+  },
+  {
+    "id": "c003",
+    "t_start_refined": 40.0,
+    "t_end_refined": 55.0,
+    "score": 68,
+    "hook_quality": 5,
+    "standalone": true,
+    "title": "the chat reaction is wild",
+    "reason": "Audio peak with delayed chat",
+    "signals": ["audio", "chat"],
+    "audio_intensity": 9.5,
+    "chat_hype_score": 42.1,
+    "msg_count": 60,
+    "top_emotes": ["POG", "KEKW"]
+  }
+]
