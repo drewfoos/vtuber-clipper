@@ -32,6 +32,7 @@ class ClipState(BaseModel):
     kept: bool = True
     caption_mode: Literal["burned", "clean", "both"] = "burned"
     caption_style: Literal["basic", "window3"] = "window3"
+    layout: Literal["auto", "tracking", "stacked", "static"] = "auto"
     effects: dict[str, bool] = Field(default_factory=_default_effects)
     score: int
     hook_quality: int
@@ -45,6 +46,7 @@ class ClipUpdate(BaseModel):
     kept: bool | None = None
     caption_mode: Literal["burned", "clean", "both"] | None = None
     caption_style: Literal["basic", "window3"] | None = None
+    layout: Literal["auto", "tracking", "stacked", "static"] | None = None
     effects: dict[str, bool] | None = None
 
 def _initial_clips(work_dir: Path) -> dict[str, ClipState]:

@@ -37,3 +37,16 @@ def test_put_rejects_invalid_trim(fixture_work_dir: Path):
     client = TestClient(build_app(fixture_work_dir))
     r = client.put("/api/clips/c001", json={"t_start": 14.0, "t_end": 15.0})  # 1s clip
     assert r.status_code == 400
+
+
+def test_layout_field_defaults_to_auto(fixture_work_dir: Path):
+    client = TestClient(build_app(fixture_work_dir))
+    r = client.get("/api/clips")
+    assert r.json()[0]["layout"] == "auto"
+
+
+def test_layout_field_can_be_overridden(fixture_work_dir: Path):
+    client = TestClient(build_app(fixture_work_dir))
+    r = client.put("/api/clips/c001", json={"layout": "stacked"})
+    assert r.status_code == 200
+    assert r.json()["layout"] == "stacked"
