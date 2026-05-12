@@ -58,13 +58,79 @@ def _serve(work_dir: Path, out_root: Path, port: int, idle_timeout_s: int = 1800
 @click.option("--work-root", default="work", type=click.Path(path_type=Path))
 @click.option("--out-root", default="out", type=click.Path(path_type=Path))
 @click.option("--no-review", is_flag=True, help="Skip launching review UI; run upstream + preview only.")
-def run(url: str, work_root: Path, out_root: Path, no_review: bool) -> None:
-    """Run the full pipeline for a Twitch VOD URL. Upstream stages NOT implemented in Plan A."""
-    raise click.ClickException(
-        "Upstream pipeline (download/transcribe/rank) is out of scope for Plan A. "
-        "Use `clipper review <vod_id>` against a manually-prepared work dir, "
-        "or build M1-M4 first."
-    )
+@click.option("--ranker", "ranker_override", default=None, help="Override config: 'ollama' or 'anthropic'.")
+def run(url: str, work_root: Path, out_root: Path, no_review: bool, ranker_override: str | None) -> None:
+    """Pipeline: download, transcribe, detect peaks, rank, preview, review."""
+    from clipper.audio_peaks import detect_audio_peaks
+    from clipper.candidates import build_candidates
+    from clipper.chat import download_chat
+    from clipper.chat_peaks import detect_chat_peaks
+    from clipper.config import load_config
+    from clipper.download import download_vod
+    from clipper.rank import AnthropicRanker, OllamaRanker, rank_candidates
+    from clipper.transcribe import transcribe
+
+    cfg = load_config()
+    work_root = Path(work_root)
+    out_root = Path(out_root)
+    work_root.mkdir(parents=True, exist_ok=True)
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Stage 1/8: download")
+    dl = download_vod(url, work_root, quality=cfg.download.quality)
+    work_dir = dl.video_path.parent
+
+    logger.info("Stage 2/8: chat")
+    download_chat(url, work_dir)
+
+    logger.info("Stage 3/8: transcribe")
+    transcribe(dl.audio_path, work_dir,
+               model_size=cfg.transcribe.model,
+               device=cfg.transcribe.device,
+               compute_type=cfg.transcribe.compute_type)
+
+    logger.info("Stage 4/8: audio peaks")
+    detect_audio_peaks(dl.audio_path, work_dir,
+                       db_above_baseline=cfg.audio_peaks.db_above_baseline,
+                       min_duration_seconds=cfg.audio_peaks.min_duration_seconds,
+                       merge_gap_seconds=cfg.audio_peaks.merge_gap_seconds)
+
+    logger.info("Stage 5/8: chat peaks")
+    detect_chat_peaks(work_dir / "chat.jsonl", dl.duration_seconds, work_dir,
+                      bucket_seconds=cfg.chat_peaks.bucket_seconds,
+                      min_prominence_multiplier=cfg.chat_peaks.min_prominence_multiplier,
+                      min_gap_seconds=cfg.chat_peaks.min_gap_seconds,
+                      hype_regex=cfg.chat_peaks.hype_regex)
+
+    logger.info("Stage 6/8: candidates")
+    build_candidates(work_dir / "audio_peaks.json", work_dir / "chat_peaks.json", work_dir,
+                     overlap_tolerance=cfg.candidates.overlap_tolerance_seconds,
+                     min_clip=cfg.candidates.min_clip_seconds,
+                     max_clip=cfg.candidates.max_clip_seconds,
+                     include_chat_only=cfg.candidates.include_chat_only)
+
+    logger.info("Stage 7/8: rank")
+    backend = ranker_override or cfg.rank.backend
+    if backend == "anthropic":
+        ranker_impl = AnthropicRanker(model=cfg.rank.anthropic_model)
+    else:
+        ranker_impl = OllamaRanker(model=cfg.rank.ollama_model)
+    rank_candidates(work_dir, ranker_impl,
+                    min_score=cfg.rank.min_score,
+                    max_clips=cfg.rank.max_clips)
+
+    logger.info("Stage 8/8: preview export + review")
+    preview_export(work_dir)
+
+    if no_review:
+        click.echo(f"Pipeline complete. Run 'clipper review {dl.vod_id}' to review.")
+        return
+
+    port = find_free_port()
+    review_url = f"http://localhost:{port}"
+    logger.info(f"Opening {review_url}")
+    webbrowser.open(review_url)
+    _serve(work_dir, out_root / dl.vod_id, port)
 
 
 @cli.command()

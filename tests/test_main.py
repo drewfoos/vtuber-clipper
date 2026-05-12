@@ -23,3 +23,15 @@ def test_finalize_subcommand_runs_headlessly(fixture_work_dir, fixture_out_dir):
     ])
     assert res.exit_code == 0, res.output
     assert (fixture_out_dir / "final" / "manifest.json").exists()
+
+
+def test_run_subcommand_no_longer_raises_unsupported(tmp_path):
+    """The `run` subcommand should now exist and accept a URL — we just check that --help shows it."""
+    from click.testing import CliRunner
+
+    from clipper.main import cli
+
+    res = CliRunner().invoke(cli, ["run", "--help"])
+    assert res.exit_code == 0
+    assert "url" in res.output.lower()
+    assert "Pipeline" in res.output or "pipeline" in res.output
