@@ -72,7 +72,7 @@ def _persist(work_dir: Path, clips: dict[str, ClipState]) -> None:
     }
     (work_dir / "review_state.json").write_text(json.dumps(payload, indent=2))
 
-def build_app(work_dir: Path) -> FastAPI:
+def build_app(work_dir: Path, out_root: Path | None = None) -> FastAPI:
     app = FastAPI()
     app.state.work_dir = work_dir
     app.state.clips = _initial_clips(work_dir)
@@ -112,5 +112,22 @@ def build_app(work_dir: Path) -> FastAPI:
             raise HTTPException(404, "no such clip")
         clip = app.state.clips[clip_id]
         return words_in_window(load_transcript(work_dir), clip.t_start, clip.t_end)
+
+    from fastapi.responses import StreamingResponse
+    from clipper.finalize import finalize as _finalize_call
+
+    _out_root = out_root if out_root is not None else (work_dir.parent.parent / "out" / work_dir.name)
+
+    @app.post("/api/finalize")
+    def post_finalize():
+        def event_stream():
+            try:
+                kept_count = sum(1 for c in app.state.clips.values() if c.kept)
+                yield f"data: {json.dumps({'status': 'started', 'kept_count': kept_count})}\n\n"
+                manifest = _finalize_call(work_dir, _out_root)
+                yield f"data: {json.dumps({'status': 'complete', 'manifest': str(manifest)})}\n\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'status': 'error', 'msg': str(exc)})}\n\n"
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     return app

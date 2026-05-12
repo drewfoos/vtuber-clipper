@@ -68,3 +68,13 @@ def test_both_mode_produces_burned_and_clean_and_srt(fixture_work_dir, fixture_o
     assert sum(1 for f in files if f.endswith(".mp4") and "_clean" not in f) == 1
     assert sum(1 for f in files if f.endswith("_clean.mp4")) == 1
     assert sum(1 for f in files if f.endswith(".srt")) == 1
+
+def test_post_finalize_streams_progress(fixture_work_dir, fixture_out_dir):
+    preview_export(fixture_work_dir)
+    client = TestClient(build_app(fixture_work_dir, out_root=fixture_out_dir))
+    client.put("/api/clips/c002", json={"kept": False})
+    client.put("/api/clips/c003", json={"kept": False})
+    with client.stream("POST", "/api/finalize") as r:
+        assert r.status_code == 200
+        events = [line for line in r.iter_lines() if line.startswith("data:")]
+    assert any("complete" in e for e in events)
