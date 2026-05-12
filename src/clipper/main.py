@@ -19,7 +19,8 @@ def cli() -> None:
     """VTuber Clipper — pipeline + review UI."""
 
 
-def _serve(work_dir: Path, out_root: Path, port: int) -> None:
+def _serve(work_dir: Path, out_root: Path, port: int, idle_timeout_s: int = 1800) -> None:
+    import asyncio, time
     app = build_app(work_dir, out_root=out_root)
     server_info = {
         "port": port,
@@ -28,9 +29,28 @@ def _serve(work_dir: Path, out_root: Path, port: int) -> None:
         "pid": __import__("os").getpid(),
     }
     (work_dir / "server.json").write_text(json.dumps(server_info))
+
     config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
     server = uvicorn.Server(config)
-    server.run()
+
+    async def watcher():
+        while not server.started:
+            await asyncio.sleep(0.1)
+        while True:
+            await asyncio.sleep(5)
+            if app.state.should_exit:
+                server.should_exit = True
+                return
+            idle = time.monotonic() - app.state.last_request_at
+            if idle > idle_timeout_s:
+                logger.info(f"Idle {idle:.0f}s — shutting down")
+                server.should_exit = True
+                return
+
+    async def main_loop():
+        await asyncio.gather(server.serve(), watcher())
+
+    asyncio.run(main_loop())
 
 
 @cli.command()

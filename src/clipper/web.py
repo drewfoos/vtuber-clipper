@@ -77,6 +77,13 @@ def build_app(work_dir: Path, out_root: Path | None = None) -> FastAPI:
     app.state.work_dir = work_dir
     app.state.clips = _initial_clips(work_dir)
     app.state.should_exit = False
+    import time as _time
+    app.state.last_request_at = _time.monotonic()
+
+    @app.middleware("http")
+    async def track_activity(request, call_next):
+        app.state.last_request_at = _time.monotonic()
+        return await call_next(request)
 
     @app.get("/api/clips")
     def list_clips() -> list[ClipState]:

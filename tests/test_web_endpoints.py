@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -52,3 +53,10 @@ def test_static_js_served(fixture_work_dir):
     assert r.status_code == 200
     assert "loadClips" in r.text
     assert "innerHTML" not in r.text  # XSS guard: must use textContent / DOM construction
+
+def test_idle_tracker_updates_on_request(fixture_work_dir: Path):
+    app = build_app(fixture_work_dir)
+    before = app.state.last_request_at
+    time.sleep(0.01)
+    TestClient(app).get("/api/clips")
+    assert app.state.last_request_at > before
