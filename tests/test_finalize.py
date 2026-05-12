@@ -41,3 +41,30 @@ def test_manifest_written(fixture_work_dir: Path, fixture_out_dir: Path):
     manifest = json.loads((fixture_out_dir / "final" / "manifest.json").read_text())
     assert len(manifest["clips"]) == 1
     assert manifest["clips"][0]["title"] == "HOLY NO WAY THAT JUST HAPPENED"
+
+def test_clean_mode_produces_no_captions_and_srt(fixture_work_dir, fixture_out_dir):
+    preview_export(fixture_work_dir)
+    client = TestClient(build_app(fixture_work_dir))
+    client.put("/api/clips/c001", json={"caption_mode": "clean"})
+    client.put("/api/clips/c002", json={"kept": False})
+    client.put("/api/clips/c003", json={"kept": False})
+    finalize(fixture_work_dir, fixture_out_dir)
+    final = fixture_out_dir / "final"
+    mp4s = list(final.glob("*.mp4"))
+    srts = list(final.glob("*.srt"))
+    assert len(mp4s) == 1
+    assert len(srts) == 1
+    assert mp4s[0].stem == srts[0].stem
+
+def test_both_mode_produces_burned_and_clean_and_srt(fixture_work_dir, fixture_out_dir):
+    preview_export(fixture_work_dir)
+    client = TestClient(build_app(fixture_work_dir))
+    client.put("/api/clips/c001", json={"caption_mode": "both"})
+    client.put("/api/clips/c002", json={"kept": False})
+    client.put("/api/clips/c003", json={"kept": False})
+    finalize(fixture_work_dir, fixture_out_dir)
+    final = fixture_out_dir / "final"
+    files = sorted(p.name for p in final.iterdir())
+    assert sum(1 for f in files if f.endswith(".mp4") and "_clean" not in f) == 1
+    assert sum(1 for f in files if f.endswith("_clean.mp4")) == 1
+    assert sum(1 for f in files if f.endswith(".srt")) == 1
