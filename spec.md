@@ -459,71 +459,27 @@ def track_face(video_path: Path, ranked_path: Path, work_dir: Path) -> Path:
 
 If no face is detected for >50% of the clip (common in gameplay-heavy moments where the model is small in the corner), default to a fixed crop centered on the right third of the frame (where VTuber webcam overlays typically sit) — make this fallback configurable in `config.toml`.
 
-### 6.9 `export.py`
+### 6.9 `preview_export.py`
 
-**Responsibility:** Cut each ranked clip from the source video, crop to 9:16 with the tracked face center, burn in captions from the transcript, encode with NVENC, and write final `.mp4` files.
+**Responsibility:** Fast 540×960 NVENC preview encodes with no captions burned. Reads `ranked.json` + `video.mp4`; writes `work/<vod>/previews/<id>.mp4`. See `plan-a-interaction.md` Task 6. Uses shared `encode_clip` + `PREVIEW` profile from `clipper.util.ffmpeg`.
 
-**Interface:**
-```python
-def export_clips(
-    video_path: Path,
-    ranked_path: Path,
-    face_track_path: Path,
-    transcript_path: Path,
-    out_dir: Path,
-    config: ExportConfig,
-) -> Path:
-    """Returns path to manifest.json."""
-```
+### 6.10 `finalize.py`
 
-**FFmpeg approach per clip:**
+**Responsibility:** Full-quality 1080×1920 re-encode of clips marked kept in `review_state.json`. Supports `caption_mode` burned/clean/both. Writes `out/<vod>/final/<NN>_<slug>.mp4` + `manifest.json`. See `plan-a-interaction.md` Task 12.
 
-For a 1920×1080 source and 1080×1920 output (9:16):
-- Crop width = 608 (1080 × 9/16 = 607.5 → round up to even)
-- Crop height = 1080 (full source height)
-- Crop x = `face_center_x * 1920 - 304`, clamped to [0, 1312]
-- Use ffmpeg's `crop` filter with the `sendcmd` filter to vary x over time, OR pre-generate a per-frame crop expression
+### 6.11 `captions.py`
 
-**Simpler initial approach (good enough for v0):** use a single weighted-average x for the whole clip rather than per-frame tracking. Refine to dynamic cropping later.
+**Responsibility:** `AssBuilder` class + `generate_srt` + `generate_basic_ass`. Plan A ships the basic non-animated style only; animated styles (window3, single, karaoke, stacked2) are Plan B.
 
-**Caption burn-in:**
-- Generate an SRT file per clip from the relevant transcript segments
-- Use ffmpeg `subtitles` filter with `force_style` for size/position/outline
-- Recommended style: `Fontname=Arial Black,Fontsize=18,PrimaryColour=&Hffffff,OutlineColour=&H000000,Outline=3,Shadow=0,Alignment=2,MarginV=200`
+### 6.12 `web.py`
 
-**Encode command shape:**
-```
-ffmpeg -ss <t_start> -to <t_end> -i video.mp4 \
-       -vf "crop=608:1080:<x>:0,scale=1080:1920,subtitles=clip.srt:force_style='...'" \
-       -c:v h264_nvenc -preset p5 -b:v 6M \
-       -c:a aac -b:a 128k \
-       -movflags +faststart \
-       out/clips/01_<slug>.mp4
-```
+**Responsibility:** FastAPI + uvicorn server with 6 endpoints: `GET /api/clips`, `PUT /api/clips/{id}`, `GET /api/clips/{id}/preview.mp4`, `GET /api/clips/{id}/transcript`, `POST /api/finalize` (SSE), `POST /api/shutdown`. State persisted to `review_state.json`. 30-min idle timeout.
 
-**Manifest output:**
-```json
-{
-  "vod_id": "2762489406",
-  "streamer": "...",
-  "source_url": "...",
-  "generated_at": "2026-05-11T...",
-  "clips": [
-    {
-      "filename": "01_holy-no-way.mp4",
-      "title": "I CANNOT BELIEVE WHAT JUST HAPPENED",
-      "t_start_source": 1234.5,
-      "t_end_source": 1267.0,
-      "duration": 32.5,
-      "score": 87,
-      "reason": "...",
-      "top_emotes": ["KEKW", "LULW"]
-    }
-  ]
-}
-```
+### 6.13 `effects/` package
 
-### 6.10 `main.py`
+**Responsibility:** `FinalizeEffect` Protocol only in Plan A; concrete effects ship in Plan B.
+
+### 6.14 `main.py`
 
 CLI built with `click`:
 
@@ -584,6 +540,13 @@ nvenc_preset = "p5"
 nvenc_bitrate = "6M"
 fallback_crop_x_fraction = 0.66  # right-third fallback when no face detected
 caption_style = "Fontname=Arial Black,Fontsize=18,PrimaryColour=&Hffffff,OutlineColour=&H000000,Outline=3,Shadow=0,Alignment=2,MarginV=200"
+
+[finalize]
+caption_style = "basic"        # Plan B adds: window3 | single | karaoke | stacked2
+caption_mode = "burned"        # burned | clean | both
+server_port_start = 8765
+server_port_end = 8800
+idle_timeout_seconds = 1800
 ```
 
 ---
@@ -600,6 +563,8 @@ A successful first runnable version meets all of these:
 6. `out/<vod_id>/manifest.json` lists every clip with title, score, source timestamps, and reason.
 7. The `candidates.py` peak-merge logic has at least one unit test with synthetic inputs.
 8. README documents: install steps, the one-command pipeline, how to swap rankers, where outputs land.
+9. `clipper review <vod_id>` launches the browser-based two-pane review UI; edits (title, trim, kept, caption_mode) persist to `review_state.json` and survive server restart.
+10. Clicking Finalize re-encodes only kept clips to `out/<vod_id>/final/` with a manifest.
 
 **Out of scope for v0 (note for later):**
 - Per-frame dynamic crop tracking (use single weighted x for now)

@@ -103,41 +103,65 @@ Total estimate to v0 complete: **3–5 focused build sessions**, plus one ~1-hou
 
 ---
 
-## M5 — Export (static crop)
+## M5 — Preview Export (static crop)
 
-**Goal:** First watchable clips on disk. Static center-or-right crop, burned-in captions, NVENC encoded.
+**Goal:** Fast 540×960 previews on disk for all ranked clips. Static center-or-right crop, no captions burned. These feed directly into the M5.5 review UI.
 
 **Deliverables**
-- `src/clipper/export.py` with single-x weighted-average crop (per spec §11 step 5 — defer dynamic)
-- `.ass` subtitle generation (easier than `force_style` quoting on PowerShell)
+- `src/clipper/preview_export.py` with single-x weighted-average crop, `PREVIEW` encode profile
+- `clipper.util.ffmpeg` shared `encode_clip` helper + `PREVIEW` profile constant
 - Caption timing in clip-local seconds (NOT source seconds — the spec §9 gotcha)
 - `tests/test_caption_timing.py` green
-- `out/<vod_id>/manifest.json` lists every clip
+- `work/<vod_id>/previews/<id>.mp4` files for all ranked clips
 
 **Validation**
-- 10–20 MP4s exist in `out/<vod_id>/clips/`
-- Watch 3 of them top-to-bottom. Captions sync. Faces are visible (even if not perfectly centered). No mid-word starts/ends.
-- `manifest.json` round-trips through `json.loads`
-
-**This is the v0 done line.** Everything past M5 is polish.
+- Preview MP4s exist in `work/<vod_id>/previews/`
+- Watch 3 of them. Faces are visible (even if not perfectly centered). No mid-word starts/ends.
+- Files are seekable (faststart flag set)
 
 **Effort:** one session. Subtitle styling iteration is the time sink.
 
 ---
 
+## M5.5 — Review UI + Finalize (Plan A scope)
+
+**Goal:** User runs `clipper review <vod_id>`, reviews clips in a browser, clicks Finalize, gets full-quality captioned MP4s.
+
+**Deliverables**
+- `web.py` (FastAPI + uvicorn server)
+- `index.html`, `app.css`, `app.js` (two-pane review UI)
+- `review_state.json` round-trip via PUT
+- `captions.py` with basic (non-animated) ASS + SRT generation
+- `finalize.py` with burned/clean/both caption modes
+- CLI: `clipper review`, `clipper finalize`
+- SSE progress stream for finalize
+- Idle-timeout (30 min) server shutdown
+
+**Validation**
+- Manually prepare `work/<vod>/` with synthetic ranked.json + transcript.json + video.mp4
+- `clipper review <vod_id>` opens the browser
+- Edit titles, drop two clips, click Finalize
+- `out/<vod>/final/` contains the right MP4s and manifest
+
+**Effort:** 1-2 sessions.
+
+**Note:** Animated captions and motion-graphics effects are deferred to a separate plan (Plan B).
+
+---
+
 ## M6 — Face Tracking (dynamic crop)
 
-**Goal:** Crop x-position follows the avatar's face per-clip.
+**Goal:** Crop x-position follows the avatar's face per-clip. Dynamic per-frame crop applies to `finalize.py` full-quality re-encodes; `preview_export.py` continues to use static weighted-average crop.
 
 **Deliverables**
 - `src/clipper/face_track.py` with the pluggable `FaceDetector` protocol from `research.md` §2
 - Default MediaPipe; auto-degrade to YuNet on <50% hit rate; static fallback last
 - `face_track.json` with per-clip per-sample x positions
-- `export.py` upgraded to use `sendcmd` with `crop.cmd` files (per `research.md` §4)
+- `finalize.py` upgraded to use `sendcmd` with `crop.cmd` files (per `research.md` §4)
 
 **Validation**
-- Re-export the same 3 clips from M5. Avatar's face stays roughly centered through the clip even when they move.
-- Compare side-by-side with the static-crop versions. Improvement should be visible.
+- Re-finalize the same 3 clips from M5.5. Avatar's face stays roughly centered through the clip even when they move.
+- Compare side-by-side with the static-crop preview versions. Improvement should be visible.
 
 **Effort:** half to one session. Most risk is `sendcmd` syntax; static fallback is already proven.
 
