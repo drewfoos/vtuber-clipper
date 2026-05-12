@@ -2,7 +2,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from clipper.captions import generate_basic_ass, generate_srt
+from clipper.captions import generate_ass, generate_srt
 from clipper.util.ffmpeg import FINAL, encode_clip
 from clipper.util.json_io import read_json, write_json
 from clipper.util.logging import get_logger
@@ -39,10 +39,11 @@ def finalize(work_dir: Path, out_root: Path) -> Path:
         srt_path = None
 
         if mode in ("burned", "both"):
+            style = clip.get("caption_style", "window3")
             with tempfile.NamedTemporaryFile(
                 "w", suffix=".ass", delete=False, encoding="utf-8"
             ) as f:
-                f.write(generate_basic_ass(words, clip["t_start"], (FINAL.width, FINAL.height)))
+                f.write(generate_ass(style, words, clip["t_start"], (FINAL.width, FINAL.height)))
                 ass_path = Path(f.name)
             try:
                 burned_path = base.with_suffix(".mp4")
@@ -69,6 +70,7 @@ def finalize(work_dir: Path, out_root: Path) -> Path:
             "t_end_source": clip["t_end"],
             "duration": duration,
             "caption_mode": mode,
+            "caption_style": clip.get("caption_style", "window3"),
             "effects_applied": ["captions"] if mode != "clean" else [],
             "score": clip.get("score", 0),
             "hook_quality": clip.get("hook_quality", 0),

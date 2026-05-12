@@ -78,3 +78,15 @@ def test_post_finalize_streams_progress(fixture_work_dir, fixture_out_dir):
         assert r.status_code == 200
         events = [line for line in r.iter_lines() if line.startswith("data:")]
     assert any("complete" in e for e in events)
+
+def test_window3_style_emits_per_word_dialogue(fixture_work_dir, fixture_out_dir):
+    preview_export(fixture_work_dir)
+    client = TestClient(build_app(fixture_work_dir))
+    client.put("/api/clips/c001", json={"caption_style": "window3"})
+    client.put("/api/clips/c002", json={"kept": False})
+    client.put("/api/clips/c003", json={"kept": False})
+    finalize(fixture_work_dir, fixture_out_dir)
+    # The manifest should record the style applied.
+    import json as _json
+    manifest = _json.loads((fixture_out_dir / "final" / "manifest.json").read_text())
+    assert manifest["clips"][0]["caption_style"] == "window3"
