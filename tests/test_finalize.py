@@ -115,3 +115,43 @@ def test_finalize_skips_failed_clip_continues_others(fixture_work_dir, fixture_o
     manifest = _json.loads(manifest_path.read_text())
     # First clip failed; second succeeded. Manifest has only the successful one.
     assert len(manifest["clips"]) == 1
+
+
+def test_stacked_layout_produces_1080x1920_and_manifest(fixture_work_dir, fixture_out_dir):
+    """When clip.layout='stacked', the output is 1080x1920 and manifest records the mode."""
+    import subprocess
+    import json as _json
+
+    preview_export(fixture_work_dir)
+    client = TestClient(build_app(fixture_work_dir))
+    client.put("/api/clips/c001", json={"layout": "stacked"})
+    client.put("/api/clips/c002", json={"kept": False})
+    client.put("/api/clips/c003", json={"kept": False})
+    finalize(fixture_work_dir, fixture_out_dir)
+    mp4 = next((fixture_out_dir / "final").glob("*.mp4"))
+    res = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height", "-of", "csv=p=0", str(mp4)],
+        capture_output=True, text=True, check=True,
+    )
+    w, h = res.stdout.strip().split(",")
+    assert int(w) == 1080 and int(h) == 1920
+    manifest = _json.loads((fixture_out_dir / "final" / "manifest.json").read_text())
+    assert manifest["clips"][0]["layout"] == "stacked"
+
+
+def test_layout_auto_falls_back_to_static_without_face_track(fixture_work_dir, fixture_out_dir):
+    """With layout='auto' and no useful face_track data, manifest records layout='static'."""
+    import json as _json
+
+    preview_export(fixture_work_dir)
+    client = TestClient(build_app(fixture_work_dir))
+    client.put("/api/clips/c001", json={"layout": "auto"})
+    client.put("/api/clips/c002", json={"kept": False})
+    client.put("/api/clips/c003", json={"kept": False})
+    # Remove any face_track.json so classifier sees nothing.
+    (fixture_work_dir / "face_track.json").unlink(missing_ok=True)
+    finalize(fixture_work_dir, fixture_out_dir)
+    manifest = _json.loads((fixture_out_dir / "final" / "manifest.json").read_text())
+    # No face data → classify_layout returns "static".
+    assert manifest["clips"][0]["layout"] == "static"

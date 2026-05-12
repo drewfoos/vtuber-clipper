@@ -9,6 +9,7 @@ from clipper.effects import emoji_burst as _eb  # noqa: F401
 from clipper.effects import hook_card as _hc    # noqa: F401
 from clipper.effects import punch_zoom as _pz   # noqa: F401
 from clipper.effects import reaction_zoom as _rz  # noqa: F401
+from clipper.layout import LayoutMode, classify_layout
 from clipper.util.ffmpeg import FINAL, encode_clip
 from clipper.util.json_io import read_json, write_json
 from clipper.util.logging import get_logger
@@ -24,6 +25,53 @@ def _kept_clips(work_dir: Path) -> list[dict]:
     return [
         {"id": cid, **data} for cid, data in state["clips"].items() if data.get("kept", True)
     ]
+
+
+def _stacked_filter(face_x: float, face_y: float, bbox_w: float,
+                    source_w: int = 1920, source_h: int = 1080,
+                    out_w: int = 1080, out_h: int = 1920) -> str:
+    """Build ffmpeg complex-filter graph for stacked layout."""
+    game_h = 608
+    avatar_h = out_h - game_h
+    crop_size = max(int(0.4 * source_w), int(3.0 * bbox_w * source_w))
+    crop_size = min(crop_size, source_h)
+    fx = max(crop_size // 2, min(source_w - crop_size // 2, int(face_x * source_w)))
+    fy = max(crop_size // 2, min(source_h - crop_size // 2, int(face_y * source_h)))
+    return (
+        f"[0:v]split=2[g][a];"
+        f"[g]scale={out_w}:{game_h}:force_original_aspect_ratio=decrease,"
+        f"pad={out_w}:{game_h}:(ow-iw)/2:(oh-ih)/2[game];"
+        f"[a]crop={crop_size}:{crop_size}:{fx - crop_size // 2}:{fy - crop_size // 2},"
+        f"scale={out_w}:{avatar_h}[avatar];"
+        f"[game][avatar]vstack[v]"
+    )
+
+
+def _encode_stacked(
+    src: Path, t_start: float, duration: float, out: Path,
+    face_x: float, face_y: float, bbox_w: float,
+    subtitles_path: Path | None = None,
+) -> None:
+    """Encode a stacked-layout clip via -filter_complex."""
+    import subprocess
+    filter_complex = _stacked_filter(face_x, face_y, bbox_w)
+    if subtitles_path is not None:
+        escaped = str(subtitles_path).replace("\\", "/").replace(":", "\\:")
+        filter_complex = filter_complex.replace("[v]", "[stacked]")
+        filter_complex += f";[stacked]subtitles='{escaped}'[v]"
+    subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-ss", str(t_start),
+        "-i", str(src),
+        "-t", str(duration),
+        "-filter_complex", filter_complex,
+        "-map", "[v]",
+        "-map", "0:a",
+        "-c:v", "h264_nvenc", "-preset", FINAL.nvenc_preset, "-cq:v", str(FINAL.cq),
+        "-c:a", "aac", "-b:a", FINAL.audio_bitrate,
+        "-movflags", "+faststart",
+        str(out),
+    ], check=True)
 
 
 def finalize(work_dir: Path, out_root: Path) -> Path:
@@ -95,38 +143,79 @@ def finalize(work_dir: Path, out_root: Path) -> Path:
             if mode != "clean":
                 applied.insert(0, "captions")
 
+            # Layout decision (Plan D)
+            layout_pref = clip.get("layout", "auto")
+            clip_face_data = face_track_data.get(clip["id"], {})
+            face_summary = clip_face_data.get("summary", {
+                "avg_x": None, "avg_y": None, "avg_bbox_w": 0.0, "avg_bbox_h": 0.0,
+                "hit_rate": 0.0,
+            })
+            if layout_pref == "auto":
+                layout_mode = classify_layout(face_summary)
+            else:
+                layout_mode = layout_pref
+
             burned_path = None
             clean_path = None
             srt_path = None
 
-            if mode in ("burned", "both"):
-                with tempfile.NamedTemporaryFile(
-                    "w", suffix=".ass", delete=False, encoding="utf-8"
-                ) as f:
-                    f.write(ctx.ass.render())
-                    ass_path = Path(f.name)
-                try:
-                    burned_path = base.with_suffix(".mp4")
+            if layout_mode == "stacked":
+                face_x = face_summary["avg_x"] if face_summary["avg_x"] is not None else 0.82
+                face_y = face_summary["avg_y"] if face_summary["avg_y"] is not None else 0.85
+                bbox_w = face_summary["avg_bbox_w"] or 0.15
+
+                if mode in ("burned", "both"):
+                    with tempfile.NamedTemporaryFile(
+                        "w", suffix=".ass", delete=False, encoding="utf-8"
+                    ) as f:
+                        f.write(ctx.ass.render())
+                        ass_path = Path(f.name)
+                    try:
+                        burned_path = base.with_suffix(".mp4")
+                        _encode_stacked(video, clip["t_start"], duration, burned_path,
+                                        face_x, face_y, bbox_w, subtitles_path=ass_path)
+                    finally:
+                        ass_path.unlink(missing_ok=True)
+
+                if mode in ("clean", "both"):
+                    if mode == "both":
+                        clean_path = base.with_name(base.name + "_clean").with_suffix(".mp4")
+                    else:
+                        clean_path = base.with_suffix(".mp4")
+                    _encode_stacked(video, clip["t_start"], duration, clean_path,
+                                    face_x, face_y, bbox_w, subtitles_path=None)
+                    srt_path = base.with_suffix(".srt")
+                    srt_path.write_text(generate_srt(words, clip["t_start"]), encoding="utf-8")
+            else:
+                # tracking/static: use encode_clip with profile-based vertical-stripe crop.
+                if mode in ("burned", "both"):
+                    with tempfile.NamedTemporaryFile(
+                        "w", suffix=".ass", delete=False, encoding="utf-8"
+                    ) as f:
+                        f.write(ctx.ass.render())
+                        ass_path = Path(f.name)
+                    try:
+                        burned_path = base.with_suffix(".mp4")
+                        encode_clip(
+                            video, clip["t_start"], duration, burned_path, FINAL,
+                            subtitles_path=ass_path,
+                            extra_filters=ctx.extra_filters or None,
+                        )
+                    finally:
+                        ass_path.unlink(missing_ok=True)
+
+                if mode in ("clean", "both"):
+                    if mode == "both":
+                        clean_path = base.with_name(base.name + "_clean").with_suffix(".mp4")
+                    else:
+                        clean_path = base.with_suffix(".mp4")
+                    # Clean output still gets non-caption effects (zoompan, overlays).
                     encode_clip(
-                        video, clip["t_start"], duration, burned_path, FINAL,
-                        subtitles_path=ass_path,
+                        video, clip["t_start"], duration, clean_path, FINAL,
                         extra_filters=ctx.extra_filters or None,
                     )
-                finally:
-                    ass_path.unlink(missing_ok=True)
-
-            if mode in ("clean", "both"):
-                if mode == "both":
-                    clean_path = base.with_name(base.name + "_clean").with_suffix(".mp4")
-                else:
-                    clean_path = base.with_suffix(".mp4")
-                # Clean output still gets non-caption effects (zoompan, overlays).
-                encode_clip(
-                    video, clip["t_start"], duration, clean_path, FINAL,
-                    extra_filters=ctx.extra_filters or None,
-                )
-                srt_path = base.with_suffix(".srt")
-                srt_path.write_text(generate_srt(words, clip["t_start"]), encoding="utf-8")
+                    srt_path = base.with_suffix(".srt")
+                    srt_path.write_text(generate_srt(words, clip["t_start"]), encoding="utf-8")
 
             manifest_clips.append({
                 "filename": burned_path.name if burned_path else clean_path.name,
@@ -138,6 +227,7 @@ def finalize(work_dir: Path, out_root: Path) -> Path:
                 "duration": duration,
                 "caption_mode": mode,
                 "caption_style": style,
+                "layout": layout_mode,
                 "effects_applied": applied,
                 "score": clip.get("score", 0),
                 "hook_quality": clip.get("hook_quality", 0),
