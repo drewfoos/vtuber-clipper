@@ -90,3 +90,28 @@ def test_window3_style_emits_per_word_dialogue(fixture_work_dir, fixture_out_dir
     import json as _json
     manifest = _json.loads((fixture_out_dir / "final" / "manifest.json").read_text())
     assert manifest["clips"][0]["caption_style"] == "window3"
+
+def test_finalize_skips_failed_clip_continues_others(fixture_work_dir, fixture_out_dir, monkeypatch):
+    """If encode_clip fails on one clip, finalize logs it and proceeds with the others."""
+    from clipper import finalize as finalize_module
+    preview_export(fixture_work_dir)
+    client = TestClient(build_app(fixture_work_dir))
+    # Keep c001 and c002; drop c003.
+    client.put("/api/clips/c003", json={"kept": False})
+
+    real_encode = finalize_module.encode_clip
+    calls = {"n": 0}
+
+    def flaky_encode(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("simulated ffmpeg failure on first clip")
+        return real_encode(*args, **kwargs)
+
+    monkeypatch.setattr(finalize_module, "encode_clip", flaky_encode)
+
+    manifest_path = finalize_module.finalize(fixture_work_dir, fixture_out_dir)
+    import json as _json
+    manifest = _json.loads(manifest_path.read_text())
+    # First clip failed; second succeeded. Manifest has only the successful one.
+    assert len(manifest["clips"]) == 1
