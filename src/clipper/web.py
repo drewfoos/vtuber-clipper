@@ -6,6 +6,8 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from clipper.util.transcript import load_transcript, words_in_window
+
 DEFAULT_EFFECTS = {
     "punch_zoom": True,
     "emoji_burst": True,
@@ -103,5 +105,12 @@ def build_app(work_dir: Path) -> FastAPI:
             raise HTTPException(404, "no such clip")
         path = work_dir / "previews" / f"{clip_id}.mp4"
         return range_or_full(request, path)
+
+    @app.get("/api/clips/{clip_id}/transcript")
+    def get_transcript(clip_id: str) -> list[dict]:
+        if clip_id not in app.state.clips:
+            raise HTTPException(404, "no such clip")
+        clip = app.state.clips[clip_id]
+        return words_in_window(load_transcript(work_dir), clip.t_start, clip.t_end)
 
     return app
