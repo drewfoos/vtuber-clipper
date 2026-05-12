@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>VTuber Clipper · Review</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div id="vod-label">Loading…</div>
+    <div id="kept-summary"></div>
+  </header>
+  <main class="panes">
+    <aside id="clip-list" aria-label="Clip list"></aside>
+    <section id="detail" aria-label="Clip detail">
+      <video id="player" controls></video>
+      <div id="captions-overlay"></div>
+      <div class="edit-row">
+        <label>Title <input id="title-input"></label>
+      </div>
+      <div class="edit-row trim">
+        <label>Start <input id="t-start-input" type="text"></label>
+        <label>End <input id="t-end-input" type="text"></label>
+      </div>
+      <div class="edit-row">
+        <label>Captions
+          <select id="caption-mode">
+            <option value="burned">Burned</option>
+            <option value="clean">Clean + SRT</option>
+            <option value="both">Both</option>
+          </select>
+        </label>
+      </div>
+      <div class="edit-row buttons">
+        <button id="keep-btn">✓ Keep</button>
+        <button id="drop-btn">✗ Drop</button>
+      </div>
+      <div id="metadata"></div>
+    </section>
+  </main>
+  <footer class="bottom-bar">
+    <button id="finalize-btn">Finalize</button>
+    <button id="done-btn">Done</button>
+    <div id="finalize-progress"></div>
+  </footer>
+  <script src="/static/app.js" type="module"></script>
+</body>
+</html>

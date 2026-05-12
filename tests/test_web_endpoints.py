@@ -33,3 +33,15 @@ def test_shutdown_signals_exit(fixture_work_dir: Path):
     r = client.post("/api/shutdown")
     assert r.status_code == 200
     assert app.state.should_exit is True
+
+def test_root_serves_index_html(fixture_work_dir: Path):
+    client = TestClient(build_app(fixture_work_dir))
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "<title>VTuber Clipper · Review</title>" in r.text
+
+def test_static_css_served(fixture_work_dir: Path):
+    client = TestClient(build_app(fixture_work_dir))
+    r = client.get("/static/app.css")
+    assert r.status_code == 200
+    assert "clip-row" in r.text

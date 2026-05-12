@@ -136,4 +136,14 @@ def build_app(work_dir: Path, out_root: Path | None = None) -> FastAPI:
         app.state.should_exit = True
         return {"status": "shutting down"}
 
+    from fastapi.staticfiles import StaticFiles
+    from fastapi.responses import FileResponse
+
+    web_dir = Path(__file__).parent / "web"
+    app.mount("/static", StaticFiles(directory=web_dir), name="static")
+
+    @app.get("/")
+    def index():
+        return FileResponse(web_dir / "index.html")
+
     return app

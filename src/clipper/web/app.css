@@ -1,0 +1,31 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, sans-serif; background: #161616; color: #e0e0e0;
+       display: flex; flex-direction: column; height: 100vh; }
+.topbar { display: flex; justify-content: space-between; padding: 10px 16px;
+          background: #2a2a2a; border-bottom: 1px solid #444; }
+.panes { display: flex; flex: 1; overflow: hidden; }
+#clip-list { width: 320px; overflow-y: auto; background: #1a1a1a; border-right: 1px solid #444; }
+.clip-row { padding: 10px 12px; border-bottom: 1px solid #333; cursor: pointer; }
+.clip-row.selected { background: #2d4a6b; }
+.clip-row.kept { border-left: 3px solid #4caf50; }
+.clip-row.dropped { opacity: 0.4; }
+.clip-row .title { font-weight: bold; }
+.clip-row .meta { font-size: 11px; opacity: 0.7; margin-top: 2px; }
+#detail { flex: 1; padding: 16px; overflow-y: auto; position: relative; }
+#player { width: 100%; max-width: 360px; display: block; margin: 0 auto 12px; background: #000; }
+#captions-overlay { position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+                    pointer-events: none; font-family: 'Arial Black', sans-serif;
+                    font-size: 22px; color: white; text-shadow: 0 0 4px #000, -2px 0 0 #000,
+                    2px 0 0 #000, 0 -2px 0 #000, 0 2px 0 #000; white-space: nowrap; }
+.edit-row { margin: 8px 0; display: flex; gap: 12px; align-items: center; }
+.edit-row label { display: flex; gap: 6px; align-items: center; flex: 1; }
+input, select { background: #2a2a2a; color: #e0e0e0; border: 1px solid #444; padding: 4px 8px; }
+.edit-row.buttons button { padding: 6px 16px; font-weight: bold; }
+#keep-btn { background: #2d6b4a; color: white; border: none; cursor: pointer; }
+#drop-btn { background: #6b2d2d; color: white; border: none; cursor: pointer; }
+.bottom-bar { display: flex; gap: 12px; padding: 12px 16px; background: #2a2a2a;
+              border-top: 1px solid #444; align-items: center; }
+#finalize-btn { background: #2d4a6b; color: white; padding: 8px 20px; border: none;
+                cursor: pointer; font-weight: bold; }
+#done-btn { background: #444; color: white; padding: 8px 16px; border: none; cursor: pointer; }
+#metadata { margin-top: 16px; font-size: 12px; opacity: 0.8; }
