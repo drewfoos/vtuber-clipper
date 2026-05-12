@@ -94,4 +94,14 @@ def build_app(work_dir: Path) -> FastAPI:
         _persist(work_dir, app.state.clips)
         return updated
 
+    from fastapi import Request
+    from clipper.util.range_response import range_or_full
+
+    @app.get("/api/clips/{clip_id}/preview.mp4")
+    def get_preview(clip_id: str, request: Request):
+        if clip_id not in app.state.clips:
+            raise HTTPException(404, "no such clip")
+        path = work_dir / "previews" / f"{clip_id}.mp4"
+        return range_or_full(request, path)
+
     return app
