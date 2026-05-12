@@ -6,15 +6,21 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from clipper.effects import default_effects_config
+# Force-import effect modules so they self-register before defaults are computed.
+from clipper.effects import emoji_burst as _eb  # noqa: F401
+from clipper.effects import hook_card as _hc    # noqa: F401
+from clipper.effects import punch_zoom as _pz   # noqa: F401
+from clipper.effects import reaction_zoom as _rz  # noqa: F401
 from clipper.util.json_io import read_json, write_json
 from clipper.util.transcript import load_transcript, words_in_window
 
-DEFAULT_EFFECTS = {
-    "punch_zoom": True,
-    "emoji_burst": True,
-    "hook_card": True,
-    "reaction_zoom": True,
-}
+
+def _default_effects() -> dict[str, bool]:
+    """Per-clip default effects flags from the registry."""
+    return default_effects_config()
+
+
 STATE_SCHEMA_VERSION = "0.1.0"
 MIN_CLIP_SECONDS = 2.0
 
@@ -26,7 +32,7 @@ class ClipState(BaseModel):
     kept: bool = True
     caption_mode: Literal["burned", "clean", "both"] = "burned"
     caption_style: Literal["basic", "window3"] = "window3"
-    effects: dict[str, bool] = Field(default_factory=lambda: DEFAULT_EFFECTS.copy())
+    effects: dict[str, bool] = Field(default_factory=_default_effects)
     score: int
     hook_quality: int
     reason: str

@@ -1,12 +1,12 @@
 from pathlib import Path
 
+import clipper
 from clipper.captions import AssBuilder
 from clipper.effects.context import EffectContext
 from clipper.effects.emoji_burst import EmojiBurst
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-ASSETS = REPO_ROOT / "assets"
+ASSETS = Path(clipper.__file__).resolve().parent / "assets"
 
 
 def _ctx(chat_peaks):

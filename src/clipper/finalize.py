@@ -35,7 +35,7 @@ def finalize(work_dir: Path, out_root: Path) -> Path:
     chat_peaks = load_chat_peaks(work_dir)
     face_track_data: dict = (read_json(work_dir / "face_track.json")
                               if (work_dir / "face_track.json").exists() else {})
-    assets_dir = Path(__file__).resolve().parents[2] / "assets"
+    assets_dir = Path(__file__).resolve().parent / "assets"
     kept = _kept_clips(work_dir)
 
     manifest_clips = []
