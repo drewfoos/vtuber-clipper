@@ -32,10 +32,10 @@ def test_combines_audio_and_chat_to_pick_biggest():
     ctx = _ctx(audio_peaks=audio, chat_peaks=chat)
     ReactionZoom().apply(ctx)
     assert len(ctx.extra_filters) == 1
-    # Filter references clip-local time around the chat peak center (5.25s).
-    # The zoompan expression contains "4.850" (zoom_start) and "5.650" (zoom_end).
+    # Filter uses frame-number (on) variable at 30fps.
+    # zoom_start = 4.850s → 145.5 frames; zoom_end = 5.650s → 169.5 frames.
     f = ctx.extra_filters[0]
-    assert "4.850" in f or "5.650" in f
+    assert "145.5" in f or "169.5" in f
 
 
 def test_combined_audio_and_chat_at_same_time_wins():

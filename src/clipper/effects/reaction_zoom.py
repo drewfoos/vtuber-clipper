@@ -32,11 +32,16 @@ class ReactionZoom:
         best_t, _ = max(scored, key=lambda x: x[1])
         zoom_start = max(0.0, best_t - ZOOM_WINDOW_S / 2)
         zoom_end = zoom_start + ZOOM_WINDOW_S
+        fps = 30
+        # zoompan's z= expression only supports spatial variables; use on (output
+        # frame number) instead of t (time) which is not available in z=.
+        n_start = zoom_start * fps
+        n_end = zoom_end * fps
         expr = (
-            f"if(between(t,{zoom_start:.3f},{zoom_end:.3f}),{ZOOM_FACTOR},1)"
+            f"if(between(on,{n_start:.1f},{n_end:.1f}),{ZOOM_FACTOR},1)"
         )
         ctx.extra_filters.append(
-            f"zoompan=z='{expr}':d=1:s={ctx.output_size[0]}x{ctx.output_size[1]}:fps=30"
+            f"zoompan=z='{expr}':d=1:s={ctx.output_size[0]}x{ctx.output_size[1]}:fps={fps}"
         )
 
 
