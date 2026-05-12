@@ -67,6 +67,7 @@ def run(url: str, work_root: Path, out_root: Path, no_review: bool, ranker_overr
     from clipper.chat_peaks import detect_chat_peaks
     from clipper.config import load_config
     from clipper.download import download_vod
+    from clipper.face_track import track_face
     from clipper.rank import AnthropicRanker, OllamaRanker, rank_candidates
     from clipper.transcribe import transcribe
 
@@ -76,40 +77,40 @@ def run(url: str, work_root: Path, out_root: Path, no_review: bool, ranker_overr
     work_root.mkdir(parents=True, exist_ok=True)
     out_root.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Stage 1/8: download")
+    logger.info("Stage 1/9: download")
     dl = download_vod(url, work_root, quality=cfg.download.quality)
     work_dir = dl.video_path.parent
 
-    logger.info("Stage 2/8: chat")
+    logger.info("Stage 2/9: chat")
     download_chat(url, work_dir)
 
-    logger.info("Stage 3/8: transcribe")
+    logger.info("Stage 3/9: transcribe")
     transcribe(dl.audio_path, work_dir,
                model_size=cfg.transcribe.model,
                device=cfg.transcribe.device,
                compute_type=cfg.transcribe.compute_type)
 
-    logger.info("Stage 4/8: audio peaks")
+    logger.info("Stage 4/9: audio peaks")
     detect_audio_peaks(dl.audio_path, work_dir,
                        db_above_baseline=cfg.audio_peaks.db_above_baseline,
                        min_duration_seconds=cfg.audio_peaks.min_duration_seconds,
                        merge_gap_seconds=cfg.audio_peaks.merge_gap_seconds)
 
-    logger.info("Stage 5/8: chat peaks")
+    logger.info("Stage 5/9: chat peaks")
     detect_chat_peaks(work_dir / "chat.jsonl", dl.duration_seconds, work_dir,
                       bucket_seconds=cfg.chat_peaks.bucket_seconds,
                       min_prominence_multiplier=cfg.chat_peaks.min_prominence_multiplier,
                       min_gap_seconds=cfg.chat_peaks.min_gap_seconds,
                       hype_regex=cfg.chat_peaks.hype_regex)
 
-    logger.info("Stage 6/8: candidates")
+    logger.info("Stage 6/9: candidates")
     build_candidates(work_dir / "audio_peaks.json", work_dir / "chat_peaks.json", work_dir,
                      overlap_tolerance=cfg.candidates.overlap_tolerance_seconds,
                      min_clip=cfg.candidates.min_clip_seconds,
                      max_clip=cfg.candidates.max_clip_seconds,
                      include_chat_only=cfg.candidates.include_chat_only)
 
-    logger.info("Stage 7/8: rank")
+    logger.info("Stage 7/9: rank")
     backend = ranker_override or cfg.rank.backend
     if backend == "anthropic":
         ranker_impl = AnthropicRanker(model=cfg.rank.anthropic_model)
@@ -119,7 +120,11 @@ def run(url: str, work_root: Path, out_root: Path, no_review: bool, ranker_overr
                     min_score=cfg.rank.min_score,
                     max_clips=cfg.rank.max_clips)
 
-    logger.info("Stage 8/8: preview export + review")
+    logger.info("Stage 8/9: face tracking")
+    track_face(work_dir / "video.mp4", work_dir,
+               ranked_path=work_dir / "ranked.json")
+
+    logger.info("Stage 9/9: preview export + review")
     preview_export(work_dir)
 
     if no_review:
