@@ -45,3 +45,10 @@ def test_static_css_served(fixture_work_dir: Path):
     r = client.get("/static/app.css")
     assert r.status_code == 200
     assert "clip-row" in r.text
+
+def test_static_js_served(fixture_work_dir):
+    client = TestClient(build_app(fixture_work_dir))
+    r = client.get("/static/app.js")
+    assert r.status_code == 200
+    assert "loadClips" in r.text
+    assert "innerHTML" not in r.text  # XSS guard: must use textContent / DOM construction
