@@ -48,7 +48,8 @@ def download_vod(url: str, work_root: Path, quality: str = "1080p60") -> Downloa
     if not video_path.exists():
         logger.info(f"Downloading {url} at {quality} -> {video_path}")
         with yt_dlp.YoutubeDL({
-            "format": quality,
+            "format": f"{quality}+bestaudio[ext=m4a]/{quality}/best",
+            "merge_output_format": "mp4",
             "outtmpl": str(video_path),
             "quiet": True,
             "no_warnings": True,

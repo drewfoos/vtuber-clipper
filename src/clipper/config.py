@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config.toml"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config.toml"
 
 
 class DownloadConfig(BaseModel):

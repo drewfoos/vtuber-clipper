@@ -215,7 +215,7 @@ def rank_candidates(
         chat_window = _chat_in_window(chat_path, cand["t_start"] - context_pad, cand["t_end"] + context_pad)
         try:
             rc = ranker.rank_one(cand, words, chat_window)
-        except (ValueError, httpx.HTTPError) as exc:
+        except Exception as exc:
             logger.warning(f"Ranker failed on {cand.get('id')}: {exc}")
             continue
         if rc.score < min_score:
