@@ -109,12 +109,38 @@ document.getElementById("t-end-input").addEventListener("change", e => {
   patchClip({t_end: parseFloat(e.target.value)});
 });
 
+const WORDS_PER_WINDOW = 3;
 const player = document.getElementById("player");
 const overlay = document.getElementById("captions-overlay");
+
+function activeWordWindow(words, t) {
+  // Find index of the word whose [start, end) contains t.
+  const idx = words.findIndex(w => w.start <= t && t < w.end);
+  if (idx === -1) return null;
+  // Center the active word in a 3-word sliding window when possible.
+  const start = Math.max(0, idx - 1);
+  const end = Math.min(words.length, start + WORDS_PER_WINDOW);
+  return { activeIdx: idx, windowStart: start, windowEnd: end };
+}
+
 player.addEventListener("timeupdate", () => {
-  const t = player.currentTime;
-  const active = state.transcript.find(w => w.start <= t && t < w.end);
-  overlay.textContent = active ? active.word : "";
+  overlay.replaceChildren();
+  const w = activeWordWindow(state.transcript, player.currentTime);
+  if (!w) {
+    overlay.style.top = "";
+    return;
+  }
+  for (let i = w.windowStart; i < w.windowEnd; i++) {
+    const span = document.createElement("span");
+    span.textContent = state.transcript[i].word;
+    span.style.margin = "0 4px";
+    if (i === w.activeIdx) {
+      span.style.color = "#ffd700";
+      span.style.transform = "scale(1.12)";
+      span.style.display = "inline-block";
+    }
+    overlay.appendChild(span);
+  }
   overlay.style.top = "70%";
 });
 

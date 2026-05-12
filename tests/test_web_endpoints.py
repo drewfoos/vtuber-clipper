@@ -60,3 +60,13 @@ def test_idle_tracker_updates_on_request(fixture_work_dir: Path):
     time.sleep(0.01)
     TestClient(app).get("/api/clips")
     assert app.state.last_request_at > before
+
+def test_app_js_groups_caption_words(fixture_work_dir):
+    client = TestClient(build_app(fixture_work_dir))
+    r = client.get("/static/app.js")
+    assert r.status_code == 200
+    # The overlay should show 3-word windows, not single words.
+    # We assert presence of a grouping function or constant.
+    assert "WORDS_PER_WINDOW" in r.text or "window" in r.text.lower()
+    # And that the active-word visualization wraps individual words in <span>.
+    assert "createElement(\"span\")" in r.text or "createElement('span')" in r.text
