@@ -1,4 +1,5 @@
 import json
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -99,3 +100,41 @@ def test_rank_candidates_filters_by_min_score(fixture_work_dir: Path, monkeypatc
     ranked = json.loads(out.read_text(encoding="utf-8"))
     assert len(ranked) == 1
     assert ranked[0]["id"] == "c001"
+
+
+def test_anthropic_ranker_returns_ranked_clip(fixture_work_dir: Path):
+    from clipper.rank import AnthropicRanker
+
+    candidate = {
+        "id": "c001",
+        "t_start": 5.0,
+        "t_end": 15.0,
+        "signals": ["audio", "chat"],
+        "audio_intensity": 14.0,
+        "chat_hype_score": 87.0,
+        "msg_count": 142,
+        "top_emotes": ["KEKW"],
+    }
+    transcript_words = [{"start": 5.0, "end": 5.3, "word": "holy"}]
+    chat_window = [{"t": 5.5, "user": "x", "msg": "KEKW"}]
+
+    fake_message = MagicMock()
+    fake_message.content = [
+        MagicMock(text='{"score": 75, "t_start_refined": 5.0, "t_end_refined": 14.5, "hook_quality": 7, "standalone": true, "title": "TEST TITLE", "reason": "test"}')
+    ]
+    fake_client = MagicMock()
+    fake_client.messages.create.return_value = fake_message
+
+    # Create a fake anthropic module and inject it into sys.modules
+    fake_anthropic_module = MagicMock()
+    fake_anthropic_module.Anthropic = MagicMock(return_value=fake_client)
+
+    sys.modules["anthropic"] = fake_anthropic_module
+    try:
+        ranker = AnthropicRanker(model="claude-haiku-4-5-20251001", api_key="test")
+        rc = ranker.rank_one(candidate, transcript_words, chat_window)
+        assert rc.score == 75
+        assert rc.title == "TEST TITLE"
+    finally:
+        if "anthropic" in sys.modules:
+            del sys.modules["anthropic"]

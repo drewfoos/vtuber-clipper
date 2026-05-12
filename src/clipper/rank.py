@@ -148,6 +148,43 @@ class OllamaRanker:
         )
 
 
+@dataclass
+class AnthropicRanker:
+    model: str = "claude-haiku-4-5-20251001"
+    api_key: str | None = None
+    max_tokens: int = 1024
+
+    def rank_one(self, candidate, transcript_words, chat_window) -> RankedClip:
+        import anthropic
+        key = self.api_key or os.environ.get("ANTHROPIC_API_KEY")
+        if not key:
+            raise RuntimeError("AnthropicRanker requires ANTHROPIC_API_KEY")
+        client = anthropic.Anthropic(api_key=key)
+        prompt = _build_prompt(candidate, transcript_words, chat_window)
+        resp = client.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        content = "".join(block.text for block in resp.content if hasattr(block, "text"))
+        parsed = _extract_json(content)
+        return RankedClip(
+            id=candidate["id"],
+            t_start_refined=float(parsed.get("t_start_refined", candidate["t_start"])),
+            t_end_refined=float(parsed.get("t_end_refined", candidate["t_end"])),
+            score=int(parsed.get("score", 0)),
+            hook_quality=int(parsed.get("hook_quality", 0)),
+            standalone=bool(parsed.get("standalone", False)),
+            title=str(parsed.get("title", ""))[:60],
+            reason=str(parsed.get("reason", "")),
+            signals=candidate.get("signals", []),
+            audio_intensity=float(candidate.get("audio_intensity", 0.0)),
+            chat_hype_score=float(candidate.get("chat_hype_score", 0.0)),
+            msg_count=int(candidate.get("msg_count", 0)),
+            top_emotes=list(candidate.get("top_emotes", [])),
+        )
+
+
 def _chat_in_window(chat_jsonl: Path, t_start: float, t_end: float) -> list[dict]:
     if not chat_jsonl.exists():
         return []
