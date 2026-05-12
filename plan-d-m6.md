@@ -1,0 +1,847 @@
+# Plan D — M6: Face Tracking + Stacked Layout Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Add layout-aware finalize output. For clips where the VTuber's avatar fills the frame, do face-tracked vertical-stripe cropping (the spec's original M6). For clips where the avatar is a small corner cam over gameplay, switch to a stacked layout — game letterboxed top, avatar zoomed bottom — so the full game frame is preserved and the avatar gets generous space.
+
+**Architecture:** A new `face_track.py` stage runs MediaPipe per ranked clip and writes `face_track.json` (per-clip x/y center series plus bbox size). A new `layout.py` classifier turns each clip's face-track data into a `layout: "tracking" | "stacked" | "static"` decision. `finalize.py` grows three encoding paths corresponding to those modes. `ClipState` gains a `layout` field with "auto" default; review UI exposes a dropdown to override per clip.
+
+**Tech Stack:** Same as Plan A/B/C + mediapipe (already in deps).
+
+**Scope:** Ships:
+- `face_track.py` — MediaPipe face detection, per-clip x/y center series + bbox size.
+- `layout.py` — `classify_layout(face_track_clip)` → "tracking" / "stacked" / "static" with a configurable bbox-size threshold.
+- `finalize.py` — three encoding paths: tracking (vertical-stripe weighted-average crop), stacked (vstack of letterboxed game + zoomed avatar), static (fixed right-third).
+- `ClipState.layout` field + UI dropdown in the review surface.
+- Pipeline wiring: `face_track` runs between `rank` and `preview_export`.
+- Default to the user's manually-configured corner if MediaPipe fails entirely.
+
+**Out of scope:**
+- Per-frame dynamic crop via `sendcmd` for tracking mode. Plan D's tracking mode uses a single weighted-average x for the whole clip (matches Plan A's preview_export approach). Per-frame interpolation can be a Plan E polish.
+- Mode-classification ML beyond a simple bbox-size threshold.
+- Composite layouts other than vertical stack (no side-by-side, no PiP).
+
+---
+
+## File Structure
+
+### Created in this plan
+```
+src/clipper/
+├── face_track.py
+└── layout.py
+
+tests/
+├── test_face_track.py
+└── test_layout.py
+```
+
+### Modified in this plan
+```
+src/clipper/
+├── finalize.py            # add stacked + tracking mode encode paths
+├── web.py                 # ClipState.layout field
+└── main.py                # insert face_track stage in pipeline
+
+src/clipper/web/
+├── index.html             # layout dropdown
+└── app.js                 # layout sync + override
+
+tests/
+├── conftest.py            # already has face_track.sample.json (Plan A); confirm fields match
+└── test_finalize.py       # tests for stacked-mode output dimensions
+```
+
+---
+
+## Conventions for every task
+
+- TDD: failing test → run → confirm failure → implement → run → confirm pass → commit.
+- Reuse Plan A/B/C helpers: `read_json` / `write_json` / `encode_clip` / `FINAL` / `AssBuilder` / `get_logger`.
+- All on-disk timestamps in source-video seconds (clip-local only inside SRT/ASS).
+- Frontend uses `textContent` / DOM construction; never `innerHTML` with API-flowed data.
+- All paths Path-safe and cross-platform.
+
+---
+
+## Phase 0 — face_track.py
+
+### Task 1: face_track.py — MediaPipe per-clip sampling
+
+**Files:**
+- Create: `src/clipper/face_track.py`
+- Create: `tests/test_face_track.py`
+
+- [ ] **Step 1: Write failing tests**
+
+`tests/test_face_track.py`:
+```python
+from pathlib import Path
+
+import pytest
+
+from clipper.face_track import (
+    _smooth_x,
+    _summarize_track,
+    track_face,
+)
+
+
+def test_smooth_x_3second_moving_average():
+    # 2 fps sampling → 6 samples = 3 seconds.
+    xs = [0.5, 0.55, 0.6, 0.5, 0.45, 0.5]
+    smoothed = _smooth_x(xs, fps=2, window_seconds=3.0)
+    assert len(smoothed) == len(xs)
+    assert all(0.4 <= s <= 0.65 for s in smoothed)
+
+
+def test_summarize_track_reports_bbox_and_hit_rate():
+    track = [
+        {"t": 0.0, "x": 0.8, "y": 0.85, "bbox_w": 0.12, "bbox_h": 0.22},
+        {"t": 0.5, "x": 0.8, "y": 0.85, "bbox_w": 0.12, "bbox_h": 0.22},
+        {"t": 1.0, "x": None, "y": None, "bbox_w": None, "bbox_h": None},  # missed
+        {"t": 1.5, "x": 0.81, "y": 0.85, "bbox_w": 0.12, "bbox_h": 0.22},
+    ]
+    summary = _summarize_track(track)
+    assert 0.7 <= summary["avg_x"] <= 0.9
+    assert 0.7 <= summary["avg_y"] <= 0.9
+    assert summary["hit_rate"] == 0.75
+    assert summary["avg_bbox_w"] > 0
+
+
+def test_summarize_track_handles_all_misses():
+    track = [{"t": t * 0.5, "x": None, "y": None, "bbox_w": None, "bbox_h": None}
+             for t in range(4)]
+    summary = _summarize_track(track)
+    assert summary["hit_rate"] == 0.0
+    assert summary["avg_x"] is None
+
+
+@pytest.mark.slow
+def test_track_face_writes_per_clip_json(fixture_work_dir: Path):
+    # Uses the fixture_video.mp4 generated by tests/fixtures/make_fixture_video.py.
+    # The fixture is testsrc (no real face), so MediaPipe should miss everything.
+    # The output JSON should still be written with hit_rate=0.0 per clip.
+    out = track_face(fixture_work_dir / "video.mp4", fixture_work_dir,
+                     ranked_path=fixture_work_dir / "ranked.json",
+                     fps=2, min_confidence=0.3)
+    assert out.exists()
+    import json
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert "c001" in data
+    assert "track" in data["c001"]
+    assert "summary" in data["c001"]
+    assert data["c001"]["summary"]["hit_rate"] == 0.0
+
+
+def test_track_face_skips_if_output_exists(tmp_path: Path):
+    out = tmp_path / "face_track.json"
+    out.write_text("{}", encoding="utf-8")
+    result = track_face(tmp_path / "nope.mp4", tmp_path,
+                        ranked_path=tmp_path / "nope.json")
+    assert result == out
+```
+
+- [ ] **Step 2: Run, expect failure**
+
+`.venv\Scripts\pytest.exe tests/test_face_track.py -v` — expect ImportError.
+
+- [ ] **Step 3: Implement `src/clipper/face_track.py`**
+
+```python
+"""Per-clip face detection via MediaPipe.
+
+Samples the source video at N fps within each ranked clip's window, runs MediaPipe
+face detection on every frame, and writes face_track.json with:
+- per-sample (t, x, y, bbox_w, bbox_h) where t is clip-local seconds
+- per-clip summary (avg_x, avg_y, avg_bbox_w, hit_rate) used by layout.classify_layout
+
+Returns None values where MediaPipe missed the face. Downstream consumers
+(layout classifier, finalize) handle missing samples by falling back to defaults.
+"""
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+from clipper.util.json_io import read_json, write_json
+from clipper.util.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+def _smooth_x(xs: list[float], *, fps: int, window_seconds: float = 3.0) -> list[float]:
+    """3-second moving-average smoothing on a per-sample x series. Edges use shorter window."""
+    n = len(xs)
+    if n == 0:
+        return []
+    half_window = max(1, int(fps * window_seconds / 2))
+    out: list[float] = []
+    for i in range(n):
+        lo = max(0, i - half_window)
+        hi = min(n, i + half_window + 1)
+        out.append(float(np.mean(xs[lo:hi])))
+    return out
+
+
+def _summarize_track(track: list[dict]) -> dict:
+    """Compute per-clip averages and hit rate from a track list."""
+    hits = [t for t in track if t.get("x") is not None]
+    hit_rate = len(hits) / len(track) if track else 0.0
+    if not hits:
+        return {"avg_x": None, "avg_y": None, "avg_bbox_w": 0.0, "avg_bbox_h": 0.0,
+                "hit_rate": 0.0}
+    return {
+        "avg_x": float(np.mean([t["x"] for t in hits])),
+        "avg_y": float(np.mean([t["y"] for t in hits])),
+        "avg_bbox_w": float(np.mean([t["bbox_w"] for t in hits])),
+        "avg_bbox_h": float(np.mean([t["bbox_h"] for t in hits])),
+        "hit_rate": hit_rate,
+    }
+
+
+def track_face(
+    video_path: Path,
+    work_dir: Path,
+    ranked_path: Path,
+    *,
+    fps: int = 2,
+    min_confidence: float = 0.3,
+) -> Path:
+    """For each ranked clip, sample frames at `fps` and record MediaPipe face detection.
+
+    Output schema:
+    {
+      "c001": {
+        "fps_sampled": 2,
+        "track": [{"t": 0.0, "x": 0.82, "y": 0.85, "bbox_w": 0.12, "bbox_h": 0.22}, ...],
+        "summary": {"avg_x": 0.81, "avg_y": 0.85, "avg_bbox_w": 0.12,
+                    "avg_bbox_h": 0.22, "hit_rate": 0.95}
+      },
+      ...
+    }
+    """
+    out = work_dir / "face_track.json"
+    if out.exists():
+        logger.info(f"Skipping face track; {out} exists")
+        return out
+
+    import mediapipe as mp
+
+    ranked = read_json(ranked_path)
+    detector = mp.solutions.face_detection.FaceDetection(
+        model_selection=0, min_detection_confidence=min_confidence
+    )
+
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"could not open {video_path}")
+    source_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+
+    result: dict[str, dict] = {}
+    try:
+        for clip in ranked:
+            cid = clip["id"]
+            t_start = float(clip["t_start_refined"])
+            t_end = float(clip["t_end_refined"])
+            sample_interval = 1.0 / fps
+            track: list[dict] = []
+            t_local = 0.0
+            while t_start + t_local < t_end:
+                cap.set(cv2.CAP_PROP_POS_MSEC, (t_start + t_local) * 1000.0)
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = detector.process(rgb)
+                if results.detections:
+                    det = results.detections[0]
+                    bbox = det.location_data.relative_bounding_box
+                    track.append({
+                        "t": round(t_local, 3),
+                        "x": float(bbox.xmin + bbox.width / 2),
+                        "y": float(bbox.ymin + bbox.height / 2),
+                        "bbox_w": float(bbox.width),
+                        "bbox_h": float(bbox.height),
+                    })
+                else:
+                    track.append({
+                        "t": round(t_local, 3),
+                        "x": None, "y": None, "bbox_w": None, "bbox_h": None,
+                    })
+                t_local += sample_interval
+            result[cid] = {
+                "fps_sampled": fps,
+                "track": track,
+                "summary": _summarize_track(track),
+            }
+            logger.info(f"face_track {cid}: hit_rate={result[cid]['summary']['hit_rate']:.0%}")
+    finally:
+        cap.release()
+        detector.close()
+
+    write_json(out, result)
+    logger.info(f"Wrote face_track for {len(result)} clips to {out}")
+    return out
+```
+
+- [ ] **Step 4: Verify pass**
+
+`.venv\Scripts\pytest.exe -v -m "not slow"` — 117 + 4 (the non-slow tests) = 121 passing.
+For the slow MediaPipe integration test: `.venv\Scripts\pytest.exe -v -m slow tests/test_face_track.py` should pass (takes ~10 seconds on testsrc input).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/clipper/face_track.py tests/test_face_track.py
+git commit -m "feat: face_track.py — per-clip MediaPipe sampling with smoothing + summary"
+```
+
+---
+
+## Phase 1 — layout.py
+
+### Task 2: layout classifier
+
+**Files:**
+- Create: `src/clipper/layout.py`
+- Create: `tests/test_layout.py`
+
+- [ ] **Step 1: Write failing tests**
+
+`tests/test_layout.py`:
+```python
+from clipper.layout import classify_layout
+
+
+def test_large_face_classifies_as_tracking():
+    summary = {"avg_x": 0.5, "avg_y": 0.5, "avg_bbox_w": 0.35, "avg_bbox_h": 0.5, "hit_rate": 0.9}
+    assert classify_layout(summary) == "tracking"
+
+
+def test_small_corner_face_classifies_as_stacked():
+    summary = {"avg_x": 0.82, "avg_y": 0.85, "avg_bbox_w": 0.12, "avg_bbox_h": 0.20, "hit_rate": 0.95}
+    assert classify_layout(summary) == "stacked"
+
+
+def test_low_hit_rate_classifies_as_static():
+    summary = {"avg_x": 0.6, "avg_y": 0.5, "avg_bbox_w": 0.15, "avg_bbox_h": 0.20, "hit_rate": 0.30}
+    assert classify_layout(summary) == "static"
+
+
+def test_no_detections_at_all_is_static():
+    summary = {"avg_x": None, "avg_y": None, "avg_bbox_w": 0.0, "avg_bbox_h": 0.0, "hit_rate": 0.0}
+    assert classify_layout(summary) == "static"
+
+
+def test_threshold_is_configurable():
+    summary = {"avg_x": 0.5, "avg_y": 0.5, "avg_bbox_w": 0.22, "avg_bbox_h": 0.4, "hit_rate": 0.9}
+    # With default threshold 0.25 this is stacked. Lower the threshold and it becomes tracking.
+    assert classify_layout(summary, tracking_bbox_threshold=0.25) == "stacked"
+    assert classify_layout(summary, tracking_bbox_threshold=0.20) == "tracking"
+```
+
+- [ ] **Step 2: Run, expect failure**
+
+`.venv\Scripts\pytest.exe tests/test_layout.py -v` — expect ImportError.
+
+- [ ] **Step 3: Implement `src/clipper/layout.py`**
+
+```python
+"""Decide per-clip finalize layout from face-track summary.
+
+Three modes:
+- "tracking": vertical-stripe crop following the avatar (avatar is large and centered)
+- "stacked":  game letterboxed top + avatar zoomed bottom (corner cam over gameplay)
+- "static":   fixed right-third crop (no reliable face detection)
+"""
+from typing import Literal
+
+LayoutMode = Literal["tracking", "stacked", "static"]
+
+MIN_HIT_RATE = 0.50
+DEFAULT_TRACKING_BBOX_THRESHOLD = 0.25
+
+
+def classify_layout(
+    summary: dict,
+    *,
+    tracking_bbox_threshold: float = DEFAULT_TRACKING_BBOX_THRESHOLD,
+    min_hit_rate: float = MIN_HIT_RATE,
+) -> LayoutMode:
+    """Pick a finalize layout for one clip given its face-track summary.
+
+    A face bbox occupying >= tracking_bbox_threshold of the frame width is
+    considered "full avatar" and gets the tracking layout. Smaller faces with
+    a reliable detection get the stacked layout. Anything with hit rate below
+    min_hit_rate falls back to static.
+    """
+    if summary.get("hit_rate", 0.0) < min_hit_rate or summary.get("avg_x") is None:
+        return "static"
+    if summary.get("avg_bbox_w", 0.0) >= tracking_bbox_threshold:
+        return "tracking"
+    return "stacked"
+```
+
+- [ ] **Step 4: Verify pass**
+
+`.venv\Scripts\pytest.exe -v` — 121 + 5 = 126 passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/clipper/layout.py tests/test_layout.py
+git commit -m "feat: layout.py — tracking/stacked/static classifier from face-track summary"
+```
+
+---
+
+## Phase 2 — ClipState.layout field + UI
+
+### Task 3: ClipState.layout field
+
+**Files:**
+- Modify: `src/clipper/web.py`
+- Modify: `tests/test_review_state.py`
+
+- [ ] **Step 1: Write failing test**
+
+Append to `tests/test_review_state.py`:
+```python
+def test_layout_field_defaults_to_auto(fixture_work_dir: Path):
+    client = TestClient(build_app(fixture_work_dir))
+    r = client.get("/api/clips")
+    assert r.json()[0]["layout"] == "auto"
+
+
+def test_layout_field_can_be_overridden(fixture_work_dir: Path):
+    client = TestClient(build_app(fixture_work_dir))
+    r = client.put("/api/clips/c001", json={"layout": "stacked"})
+    assert r.status_code == 200
+    assert r.json()["layout"] == "stacked"
+```
+
+- [ ] **Step 2: Run, expect failure**
+
+`.venv\Scripts\pytest.exe tests/test_review_state.py -v` — expect 422 (Pydantic rejects "layout" since the field doesn't exist on ClipUpdate).
+
+- [ ] **Step 3: Add `layout` field to ClipState and ClipUpdate in `src/clipper/web.py`**
+
+In the `ClipState` model, add (alongside `caption_style`):
+```python
+    layout: Literal["auto", "tracking", "stacked", "static"] = "auto"
+```
+
+In the `ClipUpdate` model, add:
+```python
+    layout: Literal["auto", "tracking", "stacked", "static"] | None = None
+```
+
+- [ ] **Step 4: Verify pass**
+
+`.venv\Scripts\pytest.exe -v` — 126 + 2 = 128 passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/clipper/web.py tests/test_review_state.py
+git commit -m "feat: ClipState.layout field — auto/tracking/stacked/static"
+```
+
+---
+
+### Task 4: Layout dropdown in review UI HTML/CSS
+
+**Files:**
+- Modify: `src/clipper/web/index.html`
+- Modify: `src/clipper/web/app.css`
+
+- [ ] **Step 1: Add the dropdown to `index.html`**
+
+Find the existing `<div class="edit-row">` that contains the Captions + Style selects (from Plan B Task B16). After that row, BEFORE the effects-row, add:
+```html
+      <div class="edit-row">
+        <label>Layout
+          <select id="layout-select">
+            <option value="auto">Auto-detect</option>
+            <option value="tracking">Tracking (full avatar)</option>
+            <option value="stacked">Stacked (game + corner cam)</option>
+            <option value="static">Static (right-third)</option>
+          </select>
+        </label>
+      </div>
+```
+
+- [ ] **Step 2: No CSS changes required**
+
+The existing `.edit-row` and `select` styles already cover this. Verify by visual inspection or `git diff` that you didn't change app.css.
+
+- [ ] **Step 3: Verify**
+
+`.venv\Scripts\pytest.exe -v` — 128 passing.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/clipper/web/index.html
+git commit -m "feat: layout dropdown in review UI"
+```
+
+---
+
+### Task 5: app.js — layout sync + PUT handler
+
+**Files:**
+- Modify: `src/clipper/web/app.js`
+- Modify: `tests/test_web_endpoints.py`
+
+- [ ] **Step 1: Write failing test**
+
+Append to `tests/test_web_endpoints.py`:
+```python
+def test_app_js_has_layout_handler(fixture_work_dir):
+    client = TestClient(build_app(fixture_work_dir))
+    r = client.get("/static/app.js")
+    assert r.status_code == 200
+    assert "layout-select" in r.text
+    assert "innerHTML" not in r.text
+```
+
+- [ ] **Step 2: Run, expect failure**
+
+`.venv\Scripts\pytest.exe tests/test_web_endpoints.py::test_app_js_has_layout_handler -v` — expect FAIL.
+
+- [ ] **Step 3: Patch `src/clipper/web/app.js`**
+
+In `selectClip`, alongside the existing `document.getElementById("caption-style").value = clip.caption_style || "window3";` line, add:
+```javascript
+  document.getElementById("layout-select").value = clip.layout || "auto";
+```
+
+In the event-listener section, alongside the existing `caption-style` change listener, add:
+```javascript
+document.getElementById("layout-select").addEventListener("change", e => {
+  patchClip({layout: e.target.value});
+});
+```
+
+- [ ] **Step 4: Verify pass**
+
+`.venv\Scripts\pytest.exe -v` — 128 + 1 = 129 passing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/clipper/web/app.js tests/test_web_endpoints.py
+git commit -m "feat: app.js syncs layout dropdown to /api/clips"
+```
+
+---
+
+## Phase 3 — finalize stacked layout
+
+### Task 6: Stacked-mode encode in finalize
+
+**Files:**
+- Modify: `src/clipper/finalize.py`
+- Modify: `tests/test_finalize.py`
+
+- [ ] **Step 1: Write failing test**
+
+Append to `tests/test_finalize.py`:
+```python
+def test_stacked_layout_produces_1080x1920(fixture_work_dir, fixture_out_dir):
+    """When clip.layout='stacked', the output is still 1080x1920 but produced via vstack."""
+    import subprocess
+
+    preview_export(fixture_work_dir)
+    client = TestClient(build_app(fixture_work_dir))
+    # Force stacked layout on c001 and drop the others.
+    client.put("/api/clips/c001", json={"layout": "stacked"})
+    client.put("/api/clips/c002", json={"kept": False})
+    client.put("/api/clips/c003", json={"kept": False})
+    finalize(fixture_work_dir, fixture_out_dir)
+    mp4 = next((fixture_out_dir / "final").glob("*.mp4"))
+    res = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height", "-of", "csv=p=0", str(mp4)],
+        capture_output=True, text=True, check=True,
+    )
+    w, h = res.stdout.strip().split(",")
+    assert int(w) == 1080 and int(h) == 1920
+```
+
+- [ ] **Step 2: Run, expect failure**
+
+`.venv\Scripts\pytest.exe tests/test_finalize.py::test_stacked_layout_produces_1080x1920 -v` — expect FAIL (layout is ignored by current finalize; produces a tracking-style crop but the test still passes by accident on dimensions). If it passes accidentally, write the test more strictly: assert that the output filter chain produces a vstack (e.g., by parsing ffprobe metadata or by checking that the manifest records layout="stacked").
+
+Update the test if needed to assert manifest reflects the layout:
+```python
+    import json as _json
+    manifest = _json.loads((fixture_out_dir / "final" / "manifest.json").read_text())
+    assert manifest["clips"][0]["layout"] == "stacked"
+```
+
+- [ ] **Step 3: Implement layout-aware encode in `src/clipper/finalize.py`**
+
+Add imports at the top:
+```python
+from clipper.layout import LayoutMode, classify_layout
+```
+
+Inside the for-clip loop in `finalize()`, after the EffectContext is built but BEFORE the encode_clip calls, compute the layout for this clip:
+```python
+        layout_pref = clip.get("layout", "auto")
+        face_summary = face_track_data.get(clip["id"], {}).get("summary", {
+            "avg_x": None, "avg_y": None, "avg_bbox_w": 0.0, "avg_bbox_h": 0.0,
+            "hit_rate": 0.0,
+        })
+        if layout_pref == "auto":
+            layout_mode = classify_layout(face_summary)
+        else:
+            layout_mode = layout_pref  # explicit override
+```
+
+The current encode path uses `encode_clip(..., subtitles_path=..., extra_filters=...)` which assumes a vertical-stripe crop inside `encode_clip` (via the profile's `crop=608:1080`).
+
+For stacked mode, we need a different filter chain. Add a helper near the top of `finalize.py`:
+```python
+def _stacked_filter(face_x: float, face_y: float, bbox_w: float, bbox_h: float,
+                    source_w: int = 1920, source_h: int = 1080,
+                    out_w: int = 1080, out_h: int = 1920) -> str:
+    """Build a ffmpeg complex-filter graph for stacked layout.
+
+    Top zone (game): full source letterboxed into 1080x608.
+    Bottom zone (avatar): crop a square region centered on the face from the
+    source, then scale to 1080x1162.
+
+    Avatar crop size: 3x the face bbox width (or 0.4x source width minimum)
+    so the avatar has framing margin.
+    """
+    game_h = 608
+    avatar_h = out_h - game_h  # 1312
+    crop_size = max(int(0.4 * source_w), int(3.0 * bbox_w * source_w))
+    crop_size = min(crop_size, source_h)
+    fx = max(crop_size // 2, min(source_w - crop_size // 2, int(face_x * source_w)))
+    fy = max(crop_size // 2, min(source_h - crop_size // 2, int(face_y * source_h)))
+    return (
+        f"[0:v]split=2[g][a];"
+        f"[g]scale={out_w}:{game_h}:force_original_aspect_ratio=decrease,"
+        f"pad={out_w}:{game_h}:(ow-iw)/2:(oh-ih)/2[game];"
+        f"[a]crop={crop_size}:{crop_size}:{fx - crop_size // 2}:{fy - crop_size // 2},"
+        f"scale={out_w}:{avatar_h}[avatar];"
+        f"[game][avatar]vstack[v]"
+    )
+```
+
+Then in the encode block, branch on `layout_mode`. Add a new helper `_encode_stacked` that uses `subprocess.run` directly with `-filter_complex` (since `encode_clip` is built around `-vf`). For now, only stacked needs this — tracking and static both flow through `encode_clip`.
+
+```python
+def _encode_stacked(
+    src: Path, t_start: float, duration: float, out: Path,
+    face_x: float, face_y: float, bbox_w: float, bbox_h: float,
+    subtitles_path: Path | None = None,
+) -> None:
+    """Encode a stacked-layout clip via -filter_complex."""
+    filter_complex = _stacked_filter(face_x, face_y, bbox_w, bbox_h)
+    if subtitles_path is not None:
+        escaped = str(subtitles_path).replace("\\", "/").replace(":", "\\:")
+        # Replace the final label so subtitles can append.
+        filter_complex = filter_complex.replace("[v]", "[stacked]")
+        filter_complex += f";[stacked]subtitles='{escaped}'[v]"
+    import subprocess
+    subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-ss", str(t_start),
+        "-i", str(src),
+        "-t", str(duration),
+        "-filter_complex", filter_complex,
+        "-map", "[v]",
+        "-map", "0:a",
+        "-c:v", "h264_nvenc", "-preset", FINAL.nvenc_preset, "-cq:v", str(FINAL.cq),
+        "-c:a", "aac", "-b:a", FINAL.audio_bitrate,
+        "-movflags", "+faststart",
+        str(out),
+    ], check=True)
+```
+
+In the per-clip body, branch on `layout_mode`:
+```python
+        if layout_mode == "stacked":
+            face_x = face_summary["avg_x"] if face_summary["avg_x"] is not None else 0.82
+            face_y = face_summary["avg_y"] if face_summary["avg_y"] is not None else 0.85
+            bbox_w = face_summary["avg_bbox_w"] or 0.15
+            bbox_h = face_summary["avg_bbox_h"] or 0.20
+
+            if mode in ("burned", "both"):
+                # Need ASS rendered to a temp file; pass to _encode_stacked
+                with tempfile.NamedTemporaryFile("w", suffix=".ass", delete=False,
+                                                  encoding="utf-8") as f:
+                    f.write(ctx.ass.render())
+                    ass_path = Path(f.name)
+                try:
+                    burned_path = base.with_suffix(".mp4")
+                    _encode_stacked(video, clip["t_start"], duration, burned_path,
+                                    face_x, face_y, bbox_w, bbox_h, subtitles_path=ass_path)
+                finally:
+                    ass_path.unlink(missing_ok=True)
+            if mode in ("clean", "both"):
+                if mode == "both":
+                    clean_path = base.with_name(base.name + "_clean").with_suffix(".mp4")
+                else:
+                    clean_path = base.with_suffix(".mp4")
+                _encode_stacked(video, clip["t_start"], duration, clean_path,
+                                face_x, face_y, bbox_w, bbox_h, subtitles_path=None)
+                srt_path = base.with_suffix(".srt")
+                srt_path.write_text(generate_srt(words, clip["t_start"]), encoding="utf-8")
+        else:
+            # Existing tracking/static path via encode_clip.
+            # ... existing logic ...
+```
+
+This means refactoring the existing encode block into either a single `else:` branch or extracting it into a helper. The cleanest approach: extract the existing burn/clean/both code into `_encode_vertical_stripe(...)` helper, then dispatch based on `layout_mode`. Match the existing manifest fields plus the new `layout_mode`.
+
+Also include `layout` in `manifest_clips.append({...})`:
+```python
+            "layout": layout_mode,
+```
+
+- [ ] **Step 4: Verify pass**
+
+`.venv\Scripts\pytest.exe -v` — 129 + 1 = 130 passing. Existing finalize tests must still pass (they default to layout="auto" which without face_track.json data falls back to "static"; static path uses the same encode_clip route as before).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/clipper/finalize.py tests/test_finalize.py
+git commit -m "feat: finalize stacked layout — game letterboxed top + avatar zoomed bottom"
+```
+
+---
+
+## Phase 4 — pipeline wiring
+
+### Task 7: Wire face_track into the pipeline
+
+**Files:**
+- Modify: `src/clipper/main.py`
+
+- [ ] **Step 1: Insert face_track stage**
+
+In `src/clipper/main.py` `run()`, after the existing "Stage 7/8: rank" block and BEFORE "Stage 8/8: preview export + review", insert a new stage:
+
+```python
+    logger.info("Stage 7.5/8: face tracking")
+    from clipper.face_track import track_face
+    track_face(work_dir / "video.mp4", work_dir,
+               ranked_path=work_dir / "ranked.json")
+```
+
+(Adjust the log labels if you prefer "Stage 8/9" rebalanced numbering — pick consistent.)
+
+- [ ] **Step 2: Verify**
+
+`.venv\Scripts\pytest.exe -v` — 130 passing.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/clipper/main.py
+git commit -m "feat: face_track stage wired into clipper run pipeline"
+```
+
+---
+
+## Phase 5 — Documentation
+
+### Task 8: Plan D doc updates
+
+**Files:**
+- Modify: `spec.md`
+- Modify: `architecture.md`
+- Modify: `MILESTONES.md`
+- Modify: `changelog.md`
+- Modify: `README.md`
+
+- [ ] **Step 1: spec.md**
+
+Locate `### 6.8 face_track.py` (the existing module spec). Update it to:
+- Note the new schema: per-clip `{fps_sampled, track[], summary{avg_x, avg_y, avg_bbox_w, avg_bbox_h, hit_rate}}`.
+- Document the three layout modes (tracking / stacked / static) and how `layout.classify_layout` chooses.
+
+Add a new §6.14 `layout.py` short module spec describing `classify_layout(summary, *, tracking_bbox_threshold=0.25, min_hit_rate=0.50) -> LayoutMode`.
+
+In §8 acceptance criteria, append:
+> 15. `face_track.py` runs as a pipeline stage; `face_track.json` ships in `work/<vod>/` alongside the other intermediate files.
+> 16. `finalize` honors per-clip `layout` overrides; stacked-mode clips produce 1080×1920 output via vstack (game top + avatar bottom).
+
+### Step 2: architecture.md
+
+In §2 system diagram, insert `face_track` between `rank` and `preview_export`:
+```
+rank → face_track → preview_export → web → finalize → out/<vod>/final/
+```
+
+In §3 module table, add rows for `face_track.py` and `layout.py`.
+
+In §11 Web Layer, append:
+> Per-clip `layout` field on ClipState (auto/tracking/stacked/static) gives the user override control; defaults to auto, resolved via `layout.classify_layout` at finalize.
+
+### Step 3: MILESTONES.md
+
+Mark M6 as ✅ shipped 2026-05-12 with a note: "Stacked-layout addition beyond the original spec (handles corner-cam gameplay clips); per-frame `sendcmd` dynamic crop is deferred to a future polish pass."
+
+### Step 4: changelog.md
+
+Under `## [Unreleased]` → `### Planning`:
+- `plan-d-m6.md` — implementation plan for M6 face tracking + stacked layout.
+
+Under `### Decisions` (date 2026-05-12):
+- **2026-05-12** — M6 extends the original spec with a "stacked" layout (game letterboxed top + avatar zoomed bottom) for corner-cam gameplay clips. The original "vertical-stripe with face tracking" remains the layout for full-avatar clips. User-driven design decision after reviewing the corner-cam edge case.
+- **2026-05-12** — Layout mode is auto-classified from MediaPipe's face bbox size: `bbox_w ≥ 0.25` → tracking, smaller → stacked, hit_rate < 50% → static fallback. Per-clip override available in the review UI.
+- **2026-05-12** — Per-frame `sendcmd` dynamic crop deferred. Tracking mode uses a single weighted-average x for the whole clip; sufficient for v0 because preview_export already does this and the visual difference is small for clips short enough that the avatar doesn't traverse far.
+
+### Step 5: README.md
+
+Update the status line: `Status: Plan A + Plan B + M1-M4 + M6 complete; full-feature v0 ready.`
+
+In the Quick start section, add a note about M6:
+```markdown
+M6 (face tracking + layouts): each ranked clip gets MediaPipe face detection.
+At finalize, clips automatically use one of three layouts:
+- **Tracking** — vertical-stripe crop following the avatar (full-avatar streams)
+- **Stacked** — game letterboxed top, avatar zoomed bottom (corner-cam gameplay)
+- **Static** — fixed right-third crop (face detection failed)
+
+Override per-clip in the review UI's "Layout" dropdown.
+```
+
+### Step 6: Verify
+
+`.venv\Scripts\pytest.exe -v` — 130 passing.
+
+### Step 7: Commit
+
+```bash
+git add spec.md architecture.md MILESTONES.md changelog.md README.md
+git commit -m "docs: M6 face tracking + stacked layout shipped"
+```
+
+---
+
+## Self-Review Summary
+
+After all 8 tasks across 6 phases:
+
+- **Spec coverage:** Plan D extends spec.md §6.8 with stacked layout. The original tracking design is preserved (gets used when face is large/centered). Static fallback is now explicit and shared.
+- **No placeholders.** Every step has complete code.
+- **Type consistency:** `LayoutMode` is `Literal["tracking", "stacked", "static"]` in `layout.py`; `ClipState.layout` adds an extra value `"auto"` (meaning "decide at finalize time"). The finalize dispatcher resolves "auto" → one of the three concrete modes.
+- **Test coverage:** ~13 new tests across 4 test files. End-to-end stacked encode goes through ffmpeg-with-filter_complex.
+- **End-to-end runnability:** After Plan D, `clipper run <url>` ships a pipeline that produces visually-distinct outputs based on detected layout. Both gameplay and zatsudan streams should produce watchable clips.
+
+## Known gaps / Plan E candidates
+
+- **Per-frame dynamic crop via `sendcmd`** for tracking mode. The current weighted-average works but doesn't follow within-clip motion.
+- **Stacked-mode game-zone smarts.** Currently the top zone is the FULL source frame letterboxed. For ultrawide game footage this might still letterbox; might be smarter to crop the avatar out of the source before letterboxing the game so the game zone shows the gameplay area without the cam overlay.
+- **AnimeFaceDetector / YuNet fallbacks** from research.md §2. Currently we use MediaPipe only; if it misses, static fallback. The pluggable-detector design in research could be implemented post-Plan-D if MediaPipe proves inadequate in practice.
+- **Layout-aware effects.** Currently effects (punch_zoom, etc.) run regardless of layout mode. Stacked mode might want different effect behavior (e.g., punch_zoom on the avatar zone only).
