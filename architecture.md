@@ -111,13 +111,14 @@ Dependency direction is one-way: downstream stages read upstream outputs. No cyc
 
 | Module | Reads | Writes | Notes |
 |---|---|---|---|
-| `download.py` | URL | `video.mp4`, `audio.opus` | yt-dlp subprocess + ffmpeg audio extract from local video |
-| `chat.py` | URL | `chat.jsonl` | `chat-downloader` library, JSONL for streaming-friendly large outputs |
-| `transcribe.py` | `audio.opus` | `transcript.json` | faster-whisper, word-level timestamps, VAD on |
-| `audio_peaks.py` | `audio.opus` | `audio_peaks.json` | ffmpeg `astats`, RMS vs rolling baseline |
-| `chat_peaks.py` | `chat.jsonl` | `chat_peaks.json` | hype-weighted msg/s buckets, `scipy.signal.find_peaks` |
-| `candidates.py` | both peak files | `candidates.json` | overlap-merge, min/max duration, signal labels |
-| `rank.py` | `candidates.json`, `transcript.json`, `chat.jsonl` | `ranked.json` | LLM picks clean in/out, scores, titles |
+| `download.py` | URL | `video.mp4`, `audio.opus` | yt-dlp Python API wrapper; downloads VOD and extracts low-bitrate Opus audio via ffmpeg. |
+| `chat.py` | URL | `chat.jsonl` | chat-downloader wrapper; writes lean JSONL `{t, user, msg}`. |
+| `transcribe.py` | `audio.opus` | `transcript.json` | faster-whisper word-level transcript with explicit VRAM release. |
+| `audio_peaks.py` | `audio.opus` | `audio_peaks.json` | ffmpeg astats RMS parser + rolling-median-baseline peak detection. |
+| `chat_peaks.py` | `chat.jsonl` | `chat_peaks.json` | 2-second bucket hype-weighted rate + scipy peak finding. |
+| `candidates.py` | both peak files | `candidates.json` | overlap-merges audio + chat peaks into candidate windows with min/max duration enforcement. |
+| `rank.py` | `candidates.json`, `transcript.json`, `chat.jsonl` | `ranked.json` | Ranker Protocol + OllamaRanker (default, free) + AnthropicRanker (opt-in cloud); JSON-extracting LLM call per candidate. |
+| `config.py` | `config.toml` | — | pydantic Config from `config.toml` at repo root. |
 | `face_track.py` | `video.mp4`, `ranked.json` | `face_track.json` | per-clip x-center samples; pluggable detector |
 | `preview_export.py` | `video.mp4`, `ranked.json` | `previews/<id>.mp4` | fast 540×960 NVENC previews, no captions; shared `encode_clip` + `PREVIEW` profile |
 | `finalize.py` | `video.mp4`, `review_state.json`, `transcript.json` | `final/<NN>_<slug>.mp4`, `manifest.json` | full-quality 1080×1920 re-encode of kept clips; burned/clean/both caption modes |
@@ -220,6 +221,8 @@ CLI overrides:
 This is implemented once in a `util/staging.py` helper, not duplicated per module.
 
 `finalize` is driven by `review_state.json` rather than config-hash, since user intent (kept/edit decisions) is the input. Config hash still covers ffmpeg/caption settings, but the "what to encode" decision comes from the review state file.
+
+Every M1-M4 module uses the existence of its output file as the skip signal. There's no per-stage config-hash check yet — that's a future polish item. For now, `--force` is the escape hatch (rerunning manually after deleting the output file).
 
 ---
 

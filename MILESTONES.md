@@ -24,7 +24,9 @@ Total estimate to v0 complete: **3–5 focused build sessions**, plus one ~1-hou
 
 ---
 
-## M1 — Ingestion (download + chat)
+## M1 — Ingestion (download + chat) ✅
+
+**Status: ✅ shipped 2026-05-12**
 
 **Goal:** Given a Twitch URL, land `video.mp4`, `audio.opus`, `chat.jsonl` in `work/<vod_id>/`.
 
@@ -45,7 +47,9 @@ Total estimate to v0 complete: **3–5 focused build sessions**, plus one ~1-hou
 
 ---
 
-## M2 — Signal Detection
+## M2 — Signal Detection ✅
+
+**Status: ✅ shipped 2026-05-12**
 
 **Goal:** From audio + chat, produce two peak lists and a merged candidate list.
 
@@ -65,7 +69,9 @@ Total estimate to v0 complete: **3–5 focused build sessions**, plus one ~1-hou
 
 ---
 
-## M3 — Transcription
+## M3 — Transcription ✅
+
+**Status: ✅ shipped 2026-05-12**
 
 **Goal:** Word-level transcript on disk, used by downstream stages.
 
@@ -83,7 +89,9 @@ Total estimate to v0 complete: **3–5 focused build sessions**, plus one ~1-hou
 
 ---
 
-## M4 — Ranking
+## M4 — Ranking ✅
+
+**Status: ✅ shipped 2026-05-12**
 
 **Goal:** Candidates → ranked, scored clips with TikTok-ready titles.
 

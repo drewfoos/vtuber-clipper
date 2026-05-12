@@ -567,6 +567,8 @@ A successful first runnable version meets all of these:
 10. Clicking Finalize re-encodes only kept clips to `out/<vod_id>/final/` with a manifest.
 11. With default effects enabled, finalize manifest's `effects_applied` lists `captions`, `punch_zoom`, `hook_card`, `reaction_zoom`, and `emoji_burst` (when the clip has chat peaks).
 12. Per-clip effect overrides via the review UI are honored at finalize.
+13. `clipper run <twitch_url>` runs the M1-M4 pipeline (download → chat → transcribe → peaks → candidates → rank) end-to-end before launching the review UI.
+14. Each upstream stage is idempotent — re-running with the same work dir skips completed stages.
 
 **Out of scope for v0 (note for later):**
 - Per-frame dynamic crop tracking (use single weighted x for now)

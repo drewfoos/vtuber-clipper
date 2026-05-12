@@ -18,6 +18,7 @@ Dates are ISO 8601 (YYYY-MM-DD).
 - `MILESTONES.md` — M0 spikes → M7 polish, each with acceptance criteria and validation steps
 - `plan-a-interaction.md` — implementation plan for the core review pipeline + finalize
 - `plan-b-effects.md` — implementation plan for animated captions + 4 motion effects.
+- `plan-c-upstream.md` — implementation plan for M1-M4 upstream pipeline.
 
 ### Decisions
 - **2026-05-11** — Target streamer uses a 3D face-tracked avatar (not 2D Live2D). Face-detection risk dropped from High to Low; MediaPipe is the default plan, YuNet + AnimeFaceDetector + static-crop kept as opt-in fallbacks.
@@ -34,6 +35,13 @@ Dates are ISO 8601 (YYYY-MM-DD).
 - **2026-05-12** — Effects gracefully no-op when their input data (audio_peaks.json / chat_peaks.json) is missing. This lets Plan B ship before M1-M4 produces real peaks.
 - **2026-05-12** — `json_io.write_json` is now atomic (write-to-tmp + `os.replace`). Crash mid-write leaves the previous state file intact.
 - **2026-05-12** — Discovered during Plan B integration: ffmpeg's `zoompan` filter `z=` expression doesn't expose `t`; switched `punch_zoom` and `reaction_zoom` to frame-number (`on`) at 30 fps. Also: `emoji_burst` uses named-pad syntax requiring `-filter_complex`; `encode_clip` now auto-detects.
+- **2026-05-12** — `download.py` uses yt-dlp's Python API directly (not subprocess) for cleaner error handling and metadata access.
+- **2026-05-12** — `transcribe.py` slow integration test uses `tiny.en` on CPU to avoid CI GPU requirements; production uses configured `distil-large-v3` on CUDA.
+- **2026-05-12** — `rank.py` LLM JSON extraction (`_extract_json`) tolerates markdown fences and prose preambles around the JSON object. Real-world Ollama responses occasionally include both despite `format: "json"`.
+- **2026-05-12** — `finalize.py` now skips and continues on per-clip ffmpeg failure (interaction-design.md §12); failed clips are logged and excluded from the manifest.
+- **2026-05-12** — `audio_peaks.py` baseline computation uses a rolling median over a 60-second window; for shorter inputs it collapses to a global median.
+- **2026-05-12** — `chat_peaks.py` uses a backward signal-walk (extend left while signal > baseline×1.5) for the peak `t_start`, replacing the plan's static -15s offset which proved too aggressive for the test fixture's compact burst.
+- **2026-05-12** — `candidates.py` extends the spec with a Pass 2 loop that includes unmatched audio peaks as `signals=["audio_only"]` candidates. The spec was silent on audio-only inputs; tests required `len==1` for them.
 
 ### Not yet built
 - Any module code. Build starts after M0 spikes pass.
