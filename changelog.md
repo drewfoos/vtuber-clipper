@@ -17,6 +17,7 @@ Dates are ISO 8601 (YYYY-MM-DD).
 - `architecture.md` — system view: design principles, data flow diagram, module responsibilities, data contracts, cross-cutting conventions (time origin, config, errors, VRAM), resource budget, failure-mode map
 - `MILESTONES.md` — M0 spikes → M7 polish, each with acceptance criteria and validation steps
 - `plan-a-interaction.md` — implementation plan for the core review pipeline + finalize
+- `plan-b-effects.md` — implementation plan for animated captions + 4 motion effects.
 
 ### Decisions
 - **2026-05-11** — Target streamer uses a 3D face-tracked avatar (not 2D Live2D). Face-detection risk dropped from High to Low; MediaPipe is the default plan, YuNet + AnimeFaceDetector + static-crop kept as opt-in fallbacks.
@@ -28,6 +29,11 @@ Dates are ISO 8601 (YYYY-MM-DD).
 - **2026-05-12** — Kept `nvidia-cudnn-cu12` as a hard runtime dependency. The project is fundamentally CUDA-only (faster-whisper with `device="cuda"`, NVENC encoding); making cuDNN optional would be misleading.
 - **2026-05-12** — Plan A's `finalize.py` halts on per-clip ffmpeg failure rather than skip-and-continue. interaction-design.md §12 specifies skip-and-continue; this is deferred to Plan B / polish. Note: when one clip fails, others usually fail too (disk full, corrupted source).
 - **2026-05-12** — Frontend uses `textContent` + DOM construction; `innerHTML` is forbidden (enforced by `test_static_js_served`). Clip titles flow from LLM ranker output and are treated as untrusted markup.
+- **2026-05-12** — `emoji_burst` uses bundled Twemoji PNGs picked deterministically by emote-name hash, not literal emote→glyph mapping. Twitch emotes (KEKW, LULW, ...) have no Unicode equivalent, so we use a generic-reaction palette of six emojis.
+- **2026-05-12** — `window3` is the only animated caption style shipped in Plan B. `single`, `karaoke`, `stacked2` from interaction-design §5 were design alternatives and remain post-Plan-B.
+- **2026-05-12** — Effects gracefully no-op when their input data (audio_peaks.json / chat_peaks.json) is missing. This lets Plan B ship before M1-M4 produces real peaks.
+- **2026-05-12** — `json_io.write_json` is now atomic (write-to-tmp + `os.replace`). Crash mid-write leaves the previous state file intact.
+- **2026-05-12** — Discovered during Plan B integration: ffmpeg's `zoompan` filter `z=` expression doesn't expose `t`; switched `punch_zoom` and `reaction_zoom` to frame-number (`on`) at 30 fps. Also: `emoji_burst` uses named-pad syntax requiring `-filter_complex`; `encode_clip` now auto-detects.
 
 ### Not yet built
 - Any module code. Build starts after M0 spikes pass.

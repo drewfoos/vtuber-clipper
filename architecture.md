@@ -123,7 +123,7 @@ Dependency direction is one-way: downstream stages read upstream outputs. No cyc
 | `finalize.py` | `video.mp4`, `review_state.json`, `transcript.json` | `final/<NN>_<slug>.mp4`, `manifest.json` | full-quality 1080×1920 re-encode of kept clips; burned/clean/both caption modes |
 | `captions.py` | `transcript.json` | `.ass`, `.srt` | `AssBuilder` + `generate_srt` + `generate_basic_ass`; Plan A basic style only |
 | `web.py` | `ranked.json`, `previews/`, `review_state.json` | `review_state.json` | FastAPI + uvicorn localhost server; 6 endpoints; SSE finalize progress; 30-min idle timeout |
-| `effects/` | — | — | `FinalizeEffect` Protocol in Plan A; concrete effects in Plan B |
+| `effects/` | — | — | `FinalizeEffect` Protocol + 4 concrete effects (`punch_zoom`, `emoji_burst`, `hook_card`, `reaction_zoom`). Each mutates a shared `EffectContext` (AssBuilder + extra_filters). Registry in `effects/registry.py`. |
 
 Detail beyond one line lives in `spec.md` §6.
 
@@ -295,3 +295,5 @@ Things we deliberately defer because v0 doesn't require resolution:
 **State persistence:** every `PUT` writes through to `review_state.json` synchronously before returning 200. The server re-reads `review_state.json` at startup, so edits survive a restart.
 
 **Idle timeout:** the server shuts down after 30 minutes of no HTTP activity (configurable via `[finalize] idle_timeout_seconds`). The CLI also shuts the server on Ctrl-C.
+
+Per-clip `effects` dict and `caption_style` field are persisted to `review_state.json` and override registry defaults at finalize time.

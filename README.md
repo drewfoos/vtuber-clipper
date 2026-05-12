@@ -3,7 +3,7 @@
 Local tool that ingests a Twitch VTuber VOD and produces 10-20 9:16 short-form clips
 with burned-in captions. Pipeline runs end-to-end on a single PC; no paid APIs.
 
-## Status: Plan A in progress
+## Status: Plan A + Plan B complete; upstream pipeline (M1-M4) pending.
 
 - Spec: `spec.md`
 - Architecture: `architecture.md`
@@ -11,6 +11,13 @@ with burned-in captions. Pipeline runs end-to-end on a single PC; no paid APIs.
 - Milestones: `MILESTONES.md`
 - Interaction design: `interaction-design.md`
 - Implementation plan (current): `plan-a-interaction.md`
+
+## Plan B (animated captions + effects)
+
+Plan B ships `window3` animated captions and four effects (`punch_zoom`,
+`emoji_burst`, `hook_card`, `reaction_zoom`). Each is toggleable per-clip in
+the review UI. Effects gracefully no-op when their input peak data is missing
+(M1-M4 upstream will produce it; today, use the test fixtures).
 
 ## Quick start (Plan A only)
 

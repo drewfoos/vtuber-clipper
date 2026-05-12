@@ -477,7 +477,7 @@ If no face is detected for >50% of the clip (common in gameplay-heavy moments wh
 
 ### 6.13 `effects/` package
 
-**Responsibility:** `FinalizeEffect` Protocol only in Plan A; concrete effects ship in Plan B.
+**Responsibility:** `FinalizeEffect` Protocol + four concrete effects shipped in Plan B: `punch_zoom`, `emoji_burst`, `hook_card`, `reaction_zoom`. Each mutates a shared `EffectContext` (AssBuilder + extra_filters). Registry in `effects/registry.py`. See `plan-b-effects.md` for implementation detail.
 
 ### 6.14 `main.py`
 
@@ -542,7 +542,7 @@ fallback_crop_x_fraction = 0.66  # right-third fallback when no face detected
 caption_style = "Fontname=Arial Black,Fontsize=18,PrimaryColour=&Hffffff,OutlineColour=&H000000,Outline=3,Shadow=0,Alignment=2,MarginV=200"
 
 [finalize]
-caption_style = "basic"        # Plan B adds: window3 | single | karaoke | stacked2
+caption_style = "window3"      # window3 | basic  (other animated styles deferred)
 caption_mode = "burned"        # burned | clean | both
 server_port_start = 8765
 server_port_end = 8800
@@ -565,6 +565,8 @@ A successful first runnable version meets all of these:
 8. README documents: install steps, the one-command pipeline, how to swap rankers, where outputs land.
 9. `clipper review <vod_id>` launches the browser-based two-pane review UI; edits (title, trim, kept, caption_mode) persist to `review_state.json` and survive server restart.
 10. Clicking Finalize re-encodes only kept clips to `out/<vod_id>/final/` with a manifest.
+11. With default effects enabled, finalize manifest's `effects_applied` lists `captions`, `punch_zoom`, `hook_card`, `reaction_zoom`, and `emoji_burst` (when the clip has chat peaks).
+12. Per-clip effect overrides via the review UI are honored at finalize.
 
 **Out of scope for v0 (note for later):**
 - Per-frame dynamic crop tracking (use single weighted x for now)

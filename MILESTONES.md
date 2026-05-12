@@ -149,6 +149,26 @@ Total estimate to v0 complete: **3–5 focused build sessions**, plus one ~1-hou
 
 ---
 
+## M5.6 — Motion Graphics + Animated Captions (Plan B)
+
+**Goal:** Submagic-style aesthetic — animated captions + four motion effects shipped, per-clip toggleable in review UI.
+
+**Deliverables**
+- `window3` animated caption style (3-word window + active-word yellow highlight).
+- 4 effects: `punch_zoom`, `emoji_burst`, `hook_card`, `reaction_zoom`.
+- `EffectContext` + `FinalizeEffect` Protocol + registry.
+- UI effect-checkbox controls + caption-style selector.
+- Bundled Twemoji PNGs for `emoji_burst`.
+- Plan A debt cleanup: atomic write in json_io, 3-word caption overlay grouping.
+
+**Validation**
+- Finalize a clip from the fixture and inspect the resulting MP4 — captions animate per word with the active word in yellow; punch_zoom fires on audio peaks (≥ 8 dB); hook_card overlay appears for the first 1.5s when hook_quality ≥ 7; emoji bursts at chat peaks; reaction_zoom tightens crop at the biggest peak.
+- Disable an effect in the UI; re-finalize; verify `effects_applied` no longer lists it.
+
+**Effort:** 1-2 sessions.
+
+---
+
 ## M6 — Face Tracking (dynamic crop)
 
 **Goal:** Crop x-position follows the avatar's face per-clip. Dynamic per-frame crop applies to `finalize.py` full-quality re-encodes; `preview_export.py` continues to use static weighted-average crop.
@@ -192,6 +212,5 @@ Total estimate to v0 complete: **3–5 focused build sessions**, plus one ~1-hou
 - Per-frame dynamic crop refinement (better smoothing, scene-cut detection)
 - Multi-VOD batch processing
 - Auto-upload to TikTok / Shorts / Reels
-- Web UI for reviewing + editing clip selections before export
 - JP language support (swap distil-large-v3 → large-v3)
 - Per-clip override file (`overrides.json`) so user can hand-edit titles or in/out points
