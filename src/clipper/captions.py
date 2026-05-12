@@ -114,3 +114,49 @@ def generate_basic_ass(
         text = " ".join(g["word"] for g in group)
         builder.add_dialogue(start, end, text)
     return builder.render()
+
+
+def generate_window3_ass(
+    words: list[dict],
+    clip_start: float,
+    output_size: tuple[int, int],
+) -> str:
+    """3-word sliding window with the active word highlighted yellow + slight scale.
+
+    Emits one Dialogue line per word. Each line spans that word's [start, end)
+    in clip-local time and renders three words (prev, active, next) with the
+    active word in yellow at 1.12x scale.
+    """
+    builder = AssBuilder(width=output_size[0], height=output_size[1])
+
+    yellow = "&H0000FFFF&"   # ASS BGR: FF FF 00 = yellow
+    white = "&H00FFFFFF&"
+
+    for idx, w in enumerate(words):
+        start = w["start"] - clip_start
+        end = w["end"] - clip_start
+        prev = words[idx - 1]["word"] if idx > 0 else ""
+        nxt = words[idx + 1]["word"] if idx + 1 < len(words) else ""
+
+        parts = []
+        if prev:
+            parts.append(f"{{\\1c{white}}}{prev}")
+        parts.append(f"{{\\1c{yellow}\\fscx112\\fscy112}}{w['word']}{{\\1c{white}\\fscx100\\fscy100}}")
+        if nxt:
+            parts.append(nxt)
+        text = "{\\fad(80,0)}" + " ".join(parts)
+        builder.add_dialogue(start, end, text)
+
+    return builder.render()
+
+
+def generate_ass(
+    style: str,
+    words: list[dict],
+    clip_start: float,
+    output_size: tuple[int, int],
+) -> str:
+    """Dispatch by style name. Falls back to 'basic' for unknown styles."""
+    if style == "window3":
+        return generate_window3_ass(words, clip_start, output_size)
+    return generate_basic_ass(words, clip_start, output_size)
