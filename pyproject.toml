@@ -35,7 +35,10 @@ clipper = "clipper.main:cli"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"clipper" = ["web/*.html", "web/*.css", "web/*.js"]
+"clipper" = ["web/*.html", "web/*.css", "web/*.js", "../assets/emojis/*.png"]
+
+[tool.setuptools]
+include-package-data = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
