@@ -3,7 +3,7 @@
 Local tool that ingests a Twitch VTuber VOD and produces 10-20 9:16 short-form clips
 with burned-in captions. Pipeline runs end-to-end on a single PC; no paid APIs.
 
-## Status: Plan A + Plan B + M1-M4 complete; ready for end-to-end VOD runs.
+## Status: Plan A + Plan B + M1-M4 + M6 complete; full-feature v0 ready.
 
 - Spec: `spec.md`
 - Architecture: `architecture.md`
@@ -18,6 +18,15 @@ Plan B ships `window3` animated captions and four effects (`punch_zoom`,
 `emoji_burst`, `hook_card`, `reaction_zoom`). Each is toggleable per-clip in
 the review UI. Effects gracefully no-op when their input peak data is missing
 (M1-M4 upstream will produce it; today, use the test fixtures).
+
+## M6 (face tracking + layouts)
+
+Each ranked clip gets MediaPipe face detection. At finalize, clips automatically use one of three layouts:
+- **Tracking** — vertical-stripe crop following the avatar (full-avatar streams)
+- **Stacked** — game letterboxed top, avatar zoomed bottom (corner-cam gameplay)
+- **Static** — fixed right-third crop (face detection failed)
+
+Override per-clip in the review UI's "Layout" dropdown.
 
 ## Quick start
 

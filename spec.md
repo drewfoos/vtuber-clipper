@@ -433,31 +433,47 @@ r = httpx.post(
 
 ### 6.8 `face_track.py`
 
-**Responsibility:** For each ranked clip, compute the per-frame x-center of the avatar's face, smoothed, so the 9:16 crop window follows the model.
+**Responsibility:** For each ranked clip, sample the video at 2 fps, run MediaPipe Face Detector, and write a per-clip face-track series plus a summary used by `layout.py` to classify the clip's layout mode.
 
 **Interface:**
 ```python
 def track_face(video_path: Path, ranked_path: Path, work_dir: Path) -> Path:
-    """Returns path to face_track.json with per-clip per-second x-center positions."""
+    """Returns path to face_track.json with per-clip track series and summary."""
 ```
 
 **Implementation:**
 - For each ranked clip, sample 2 fps from the source video using OpenCV (`cv2.VideoCapture`)
 - Run MediaPipe Face Detector (`mp.solutions.face_detection`, min_detection_confidence=0.3)
-- For each sampled frame, record (relative_time, face_center_x_normalized) where x is in [0, 1]
-- If no face detected for a frame, carry forward the previous value
-- Smooth the x-position series with a 3-second moving average to avoid jitter
-- Output:
-  ```json
-  {
-    "c001": {
-      "fps_sampled": 2,
-      "track": [[0.0, 0.52], [0.5, 0.51], [1.0, 0.53], ...]
+- For each sampled frame, record `{t, x, y, bbox_w, bbox_h}` where coordinates are normalized to [0, 1]. All four values are `None` when MediaPipe missed the frame (no carry-forward — `None` is the honest signal).
+- Compute a per-clip summary: `avg_x`, `avg_y`, `avg_bbox_w`, `avg_bbox_h` (averaged over detected frames only), and `hit_rate` (fraction of sampled frames where a face was found).
+
+**Per-clip schema:**
+```json
+{
+  "c001": {
+    "fps_sampled": 2,
+    "track": [
+      {"t": 0.0, "x": 0.52, "y": 0.31, "bbox_w": 0.41, "bbox_h": 0.38},
+      {"t": 0.5, "x": null, "y": null, "bbox_w": null, "bbox_h": null},
+      {"t": 1.0, "x": 0.53, "y": 0.30, "bbox_w": 0.40, "bbox_h": 0.37}
+    ],
+    "summary": {
+      "avg_x": 0.525,
+      "avg_y": 0.305,
+      "avg_bbox_w": 0.405,
+      "avg_bbox_h": 0.375,
+      "hit_rate": 0.667
     }
   }
-  ```
+}
+```
 
-If no face is detected for >50% of the clip (common in gameplay-heavy moments where the model is small in the corner), default to a fixed crop centered on the right third of the frame (where VTuber webcam overlays typically sit) — make this fallback configurable in `config.toml`.
+**Layout modes** (classified by `layout.classify_layout` in `layout.py`):
+- `tracking` — face bbox width ≥ 0.25 of frame width; full-avatar mode, vertical-stripe crop follows face x-center.
+- `stacked` — face bbox is smaller (< 0.25); corner-cam over gameplay; output is game letterboxed top + avatar zoomed bottom via vstack, producing 1080×1920.
+- `static` — hit_rate < 0.50; face detection unreliable; fixed right-third crop fallback.
+
+`face_track.py` runs as a pipeline stage immediately after `rank.py`. `face_track.json` ships in `work/<vod>/` alongside the other intermediate files — make this fallback configurable in `config.toml`.
 
 ### 6.9 `preview_export.py`
 
@@ -479,7 +495,16 @@ If no face is detected for >50% of the clip (common in gameplay-heavy moments wh
 
 **Responsibility:** `FinalizeEffect` Protocol + four concrete effects shipped in Plan B: `punch_zoom`, `emoji_burst`, `hook_card`, `reaction_zoom`. Each mutates a shared `EffectContext` (AssBuilder + extra_filters). Registry in `effects/registry.py`. See `plan-b-effects.md` for implementation detail.
 
-### 6.14 `main.py`
+### 6.14 `layout.py`
+
+Maps a face-track per-clip summary to a `LayoutMode`:
+- `tracking` when face bbox width >= 0.25 of frame width (full avatar mode)
+- `stacked` when face bbox is smaller (corner cam over gameplay)
+- `static` when face detection hit rate < 0.50 (fallback)
+
+`classify_layout(summary, *, tracking_bbox_threshold=0.25, min_hit_rate=0.50) -> LayoutMode`.
+
+### 6.15 `main.py`
 
 CLI built with `click`:
 
@@ -569,6 +594,8 @@ A successful first runnable version meets all of these:
 12. Per-clip effect overrides via the review UI are honored at finalize.
 13. `clipper run <twitch_url>` runs the M1-M4 pipeline (download → chat → transcribe → peaks → candidates → rank) end-to-end before launching the review UI.
 14. Each upstream stage is idempotent — re-running with the same work dir skips completed stages.
+15. `face_track.py` runs as a pipeline stage; `face_track.json` ships in `work/<vod>/` alongside the other intermediate files.
+16. `finalize` honors per-clip `layout` overrides; stacked-mode clips produce 1080×1920 output via vstack (game top + avatar bottom).
 
 **Out of scope for v0 (note for later):**
 - Per-frame dynamic crop tracking (use single weighted x for now)

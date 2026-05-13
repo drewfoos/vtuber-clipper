@@ -177,21 +177,26 @@ Total estimate to v0 complete: **3–5 focused build sessions**, plus one ~1-hou
 
 ---
 
-## M6 — Face Tracking (dynamic crop)
+## M6 — Face Tracking (dynamic crop) ✅
+
+**Status: ✅ shipped 2026-05-12**
 
 **Goal:** Crop x-position follows the avatar's face per-clip. Dynamic per-frame crop applies to `finalize.py` full-quality re-encodes; `preview_export.py` continues to use static weighted-average crop.
 
 **Deliverables**
 - `src/clipper/face_track.py` with the pluggable `FaceDetector` protocol from `research.md` §2
 - Default MediaPipe; auto-degrade to YuNet on <50% hit rate; static fallback last
-- `face_track.json` with per-clip per-sample x positions
-- `finalize.py` upgraded to use `sendcmd` with `crop.cmd` files (per `research.md` §4)
+- `face_track.json` with per-clip per-sample x positions + per-clip summary (avg_x, avg_y, avg_bbox_w, hit_rate)
+- `src/clipper/layout.py` — classifies per-clip layout mode (tracking / stacked / static) from face-track summary
+- `finalize.py` upgraded to honor per-clip layout overrides; stacked-mode produces 1080×1920 via vstack (game top + avatar bottom)
 
 **Validation**
 - Re-finalize the same 3 clips from M5.5. Avatar's face stays roughly centered through the clip even when they move.
 - Compare side-by-side with the static-crop preview versions. Improvement should be visible.
 
 **Effort:** half to one session. Most risk is `sendcmd` syntax; static fallback is already proven.
+
+**Note:** Stacked-layout addition beyond the original spec (handles corner-cam gameplay clips); per-frame `sendcmd` dynamic crop is deferred to a future polish pass.
 
 ---
 

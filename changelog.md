@@ -19,6 +19,7 @@ Dates are ISO 8601 (YYYY-MM-DD).
 - `plan-a-interaction.md` — implementation plan for the core review pipeline + finalize
 - `plan-b-effects.md` — implementation plan for animated captions + 4 motion effects.
 - `plan-c-upstream.md` — implementation plan for M1-M4 upstream pipeline.
+- `plan-d-m6.md` — implementation plan for M6 face tracking + stacked layout.
 
 ### Decisions
 - **2026-05-11** — Target streamer uses a 3D face-tracked avatar (not 2D Live2D). Face-detection risk dropped from High to Low; MediaPipe is the default plan, YuNet + AnimeFaceDetector + static-crop kept as opt-in fallbacks.
@@ -42,6 +43,9 @@ Dates are ISO 8601 (YYYY-MM-DD).
 - **2026-05-12** — `audio_peaks.py` baseline computation uses a rolling median over a 60-second window; for shorter inputs it collapses to a global median.
 - **2026-05-12** — `chat_peaks.py` uses a backward signal-walk (extend left while signal > baseline×1.5) for the peak `t_start`, replacing the plan's static -15s offset which proved too aggressive for the test fixture's compact burst.
 - **2026-05-12** — `candidates.py` extends the spec with a Pass 2 loop that includes unmatched audio peaks as `signals=["audio_only"]` candidates. The spec was silent on audio-only inputs; tests required `len==1` for them.
+- **2026-05-12** — M6 extends the original spec with a "stacked" layout (game letterboxed top + avatar zoomed bottom) for corner-cam gameplay clips. The original "vertical-stripe with face tracking" remains the layout for full-avatar clips. User-driven design decision after reviewing the corner-cam edge case.
+- **2026-05-12** — Layout mode is auto-classified from MediaPipe's face bbox size: `bbox_w >= 0.25` → tracking, smaller → stacked, hit_rate < 50% → static fallback. Per-clip override available in the review UI.
+- **2026-05-12** — Per-frame `sendcmd` dynamic crop deferred. Tracking mode uses a single weighted-average x (matches preview_export); the visual difference is small for clips short enough that the avatar doesn't traverse far.
 
 ### Not yet built
 - Any module code. Build starts after M0 spikes pass.

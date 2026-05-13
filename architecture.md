@@ -119,7 +119,8 @@ Dependency direction is one-way: downstream stages read upstream outputs. No cyc
 | `candidates.py` | both peak files | `candidates.json` | overlap-merges audio + chat peaks into candidate windows with min/max duration enforcement. |
 | `rank.py` | `candidates.json`, `transcript.json`, `chat.jsonl` | `ranked.json` | Ranker Protocol + OllamaRanker (default, free) + AnthropicRanker (opt-in cloud); JSON-extracting LLM call per candidate. |
 | `config.py` | `config.toml` | — | pydantic Config from `config.toml` at repo root. |
-| `face_track.py` | `video.mp4`, `ranked.json` | `face_track.json` | per-clip x-center samples; pluggable detector |
+| `face_track.py` | `video.mp4`, `ranked.json` | `face_track.json` | per-clip MediaPipe sampling at 2 fps; writes face center series + summary (avg_x, avg_y, avg_bbox_w, hit_rate) to `face_track.json`. |
+| `layout.py` | `face_track.json` (summary) | — | classifies per-clip layout from face-track summary (tracking / stacked / static). |
 | `preview_export.py` | `video.mp4`, `ranked.json` | `previews/<id>.mp4` | fast 540×960 NVENC previews, no captions; shared `encode_clip` + `PREVIEW` profile |
 | `finalize.py` | `video.mp4`, `review_state.json`, `transcript.json` | `final/<NN>_<slug>.mp4`, `manifest.json` | full-quality 1080×1920 re-encode of kept clips; burned/clean/both caption modes |
 | `captions.py` | `transcript.json` | `.ass`, `.srt` | `AssBuilder` + `generate_srt` + `generate_basic_ass`; Plan A basic style only |
@@ -300,3 +301,5 @@ Things we deliberately defer because v0 doesn't require resolution:
 **Idle timeout:** the server shuts down after 30 minutes of no HTTP activity (configurable via `[finalize] idle_timeout_seconds`). The CLI also shuts the server on Ctrl-C.
 
 Per-clip `effects` dict and `caption_style` field are persisted to `review_state.json` and override registry defaults at finalize time.
+
+Per-clip `layout` field on ClipState (auto/tracking/stacked/static) gives the user override control; defaults to auto, resolved via `layout.classify_layout` at finalize.
