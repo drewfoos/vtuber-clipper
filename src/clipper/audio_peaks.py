@@ -6,7 +6,7 @@ from typing import Iterator
 
 import numpy as np
 
-from clipper.util.json_io import write_json
+from clipper.util.json_io import read_json, write_json
 from clipper.util.logging import get_logger
 
 logger = get_logger(__name__)
@@ -88,6 +88,31 @@ def _detect_from_samples(
     return peaks
 
 
+def _filter_to_speech(peaks: list[dict], words: list[dict]) -> list[dict]:
+    """Keep only peaks whose [t_start, t_end) window overlaps any transcribed word.
+
+    Both lists are expected to be sorted by start time. Walks them in parallel
+    in O(len(peaks) + len(words)) time. With no transcript data the peaks pass
+    through unchanged.
+    """
+    if not words:
+        return peaks
+    out: list[dict] = []
+    # word_lo: skip words that end before the current (and any later) peak begins.
+    word_lo = 0
+    for peak in peaks:
+        p_start, p_end = peak["t_start"], peak["t_end"]
+        while word_lo < len(words) and words[word_lo]["end"] <= p_start:
+            word_lo += 1
+        for i in range(word_lo, len(words)):
+            if words[i]["start"] >= p_end:
+                break
+            if words[i]["end"] > p_start:
+                out.append(peak)
+                break
+    return out
+
+
 def detect_audio_peaks(
     audio_path: Path,
     work_dir: Path,
@@ -96,6 +121,7 @@ def detect_audio_peaks(
     min_duration_seconds: float = 1.0,
     merge_gap_seconds: float = 2.0,
     target_count: int = 40,
+    transcript_path: Path | None = None,
 ) -> Path:
     """Extract RMS, detect peaks, write audio_peaks.json.
 
@@ -133,10 +159,24 @@ def detect_audio_peaks(
         min_duration_seconds=min_duration_seconds,
         merge_gap_seconds=merge_gap_seconds,
     )
+    total_detected = len(peaks)
+
+    # Transcript-aware filter — only keep peaks during actual speech. This drops
+    # game-music-only peaks (attack sounds, music swells) that have no streamer
+    # voice reaction, and naturally handles limiter-flattened audio because the
+    # signal we care about (the streamer talking loudly) IS the speech.
+    if transcript_path is not None and transcript_path.exists():
+        transcript = read_json(transcript_path)
+        all_words = [w for seg in transcript.get("segments", []) for w in seg.get("words", [])]
+        if all_words:
+            before = len(peaks)
+            peaks = _filter_to_speech(peaks, all_words)
+            logger.info(
+                f"Transcript filter: {len(peaks)}/{before} peaks overlap speech"
+            )
 
     # Cap by intensity — keep the loudest "moments" and discard the long tail of
     # mid-range peaks (especially common in action games / music streams).
-    total_detected = len(peaks)
     if len(peaks) > target_count:
         peaks.sort(key=lambda p: p["intensity"], reverse=True)
         peaks = sorted(peaks[:target_count], key=lambda p: p["t_start"])
@@ -144,6 +184,6 @@ def detect_audio_peaks(
     write_json(out, peaks)
     logger.info(
         f"Wrote {len(peaks)} audio peaks to {out}"
-        + (f" (capped from {total_detected})" if total_detected > len(peaks) else "")
+        + (f" (from {total_detected} raw)" if total_detected > len(peaks) else "")
     )
     return out

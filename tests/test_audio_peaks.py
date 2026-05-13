@@ -57,6 +57,87 @@ def test_detect_audio_peaks_empty_when_flat(tmp_path: Path):
     assert peaks == []
 
 
+def test_filter_to_speech_overlap_cases():
+    """Verify peak/word overlap detection: contained, edge-touching, no-overlap."""
+    from clipper.audio_peaks import _filter_to_speech
+
+    peaks = [
+        {"t_start": 0.0, "t_end": 2.0, "intensity": 10},   # contains word at 0.5-1.0
+        {"t_start": 5.0, "t_end": 7.0, "intensity": 10},   # no words in this range
+        {"t_start": 10.0, "t_end": 12.0, "intensity": 10}, # word at 11-13 (overlap)
+        {"t_start": 20.0, "t_end": 22.0, "intensity": 10}, # word at 19-20.5 (overlap)
+        {"t_start": 30.0, "t_end": 32.0, "intensity": 10}, # word ends at 30 EXACTLY (no overlap)
+    ]
+    words = [
+        {"start": 0.5, "end": 1.0, "word": "in"},
+        {"start": 11.0, "end": 13.0, "word": "after"},
+        {"start": 19.0, "end": 20.5, "word": "before"},
+        {"start": 28.0, "end": 30.0, "word": "edge"},  # ends exactly at 30; no overlap
+    ]
+    out = _filter_to_speech(peaks, words)
+    starts = [p["t_start"] for p in out]
+    assert 0.0 in starts
+    assert 5.0 not in starts          # no word overlaps [5, 7)
+    assert 10.0 in starts
+    assert 20.0 in starts
+    assert 30.0 not in starts         # word.end == peak.t_start is not overlap
+
+
+def test_filter_to_speech_empty_words_passes_through():
+    from clipper.audio_peaks import _filter_to_speech
+    peaks = [{"t_start": 0.0, "t_end": 1.0, "intensity": 5}]
+    assert _filter_to_speech(peaks, []) == peaks
+
+
+def test_detect_audio_peaks_with_transcript_filters_non_speech(tmp_path: Path):
+    """When transcript_path is given, peaks not overlapping speech are dropped."""
+    from clipper.audio_peaks import detect_audio_peaks
+
+    # 3 elevated peaks at t=2-3, t=5-6, t=10-11.
+    # Transcript only covers t=2-3 and t=10-11 — middle peak should be filtered.
+    lines = []
+    t = 0.0
+    for intensity in [-30, -30, -30, -30, -30, -30, -30, -30,   # 0-2s silence
+                      -10, -10, -10, -10,                        # 2-3s peak
+                      -30, -30, -30, -30, -30, -30, -30, -30,   # 3-5s silence
+                      -10, -10, -10, -10,                        # 5-6s peak
+                      -30, -30, -30, -30, -30, -30, -30, -30,
+                      -30, -30, -30, -30, -30, -30, -30, -30,   # 6-10s silence
+                      -10, -10, -10, -10]:                       # 10-11s peak
+        lines.append(f"frame:0 pts_time:{t:.2f}\nlavfi.astats.Overall.RMS_level={intensity}")
+        t += 0.25
+    log = tmp_path / "rms.log"
+    log.write_text("\n".join(lines), encoding="utf-8")
+
+    transcript_path = tmp_path / "transcript.json"
+    import json
+    transcript_path.write_text(json.dumps({
+        "segments": [
+            {"start": 2.0, "end": 3.0, "text": "hello", "words": [
+                {"start": 2.2, "end": 2.8, "word": "hello"},
+            ]},
+            {"start": 10.0, "end": 11.0, "text": "wow", "words": [
+                {"start": 10.3, "end": 10.7, "word": "wow"},
+            ]},
+        ],
+    }), encoding="utf-8")
+
+    out = detect_audio_peaks(
+        tmp_path / "nope.opus", tmp_path,
+        db_above_baseline=6.0,
+        min_duration_seconds=0.5,
+        merge_gap_seconds=0.5,
+        target_count=40,
+        transcript_path=transcript_path,
+    )
+    peaks = json.loads(out.read_text(encoding="utf-8"))
+    # Expect 2 peaks — the middle one (5-6s, no speech) dropped.
+    assert len(peaks) == 2
+    starts = sorted(p["t_start"] for p in peaks)
+    assert 1.9 <= starts[0] <= 2.1
+    assert 9.9 <= starts[1] <= 10.1
+
+
 def test_target_count_caps_audio_peaks_by_intensity(tmp_path: Path):
     """When the detector finds many peaks, only the loudest target_count survive."""
     from clipper.audio_peaks import detect_audio_peaks
