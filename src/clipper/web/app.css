@@ -12,8 +12,9 @@ body { margin: 0; font-family: system-ui, sans-serif; background: #161616; color
 .clip-row .title { font-weight: bold; }
 .clip-row .meta { font-size: 11px; opacity: 0.7; margin-top: 2px; }
 #detail { flex: 1; padding: 16px; overflow-y: auto; position: relative; }
-#player { width: 100%; max-width: 360px; display: block; margin: 0 auto 12px; background: #000; }
-#captions-overlay { position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+.player-wrap { position: relative; width: 100%; max-width: 360px; margin: 0 auto 12px; background: #000; }
+.player-wrap video { width: 100%; display: block; }
+#captions-overlay { position: absolute; bottom: 12%; left: 50%; transform: translateX(-50%);
                     pointer-events: none; font-family: 'Arial Black', sans-serif;
                     font-size: 22px; color: white; text-shadow: 0 0 4px #000, -2px 0 0 #000,
                     2px 0 0 #000, 0 -2px 0 #000, 0 2px 0 #000; white-space: nowrap; }

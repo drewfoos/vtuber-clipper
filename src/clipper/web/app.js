@@ -149,10 +149,7 @@ function activeWordWindow(words, t) {
 player.addEventListener("timeupdate", () => {
   overlay.replaceChildren();
   const w = activeWordWindow(state.transcript, player.currentTime);
-  if (!w) {
-    overlay.style.top = "";
-    return;
-  }
+  if (!w) return;
   for (let i = w.windowStart; i < w.windowEnd; i++) {
     const span = document.createElement("span");
     span.textContent = state.transcript[i].word;
@@ -164,7 +161,6 @@ player.addEventListener("timeupdate", () => {
     }
     overlay.appendChild(span);
   }
-  overlay.style.top = "70%";
 });
 
 document.getElementById("finalize-btn").addEventListener("click", async () => {
