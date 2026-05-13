@@ -13,8 +13,11 @@ merge_gap_seconds = 2.0
 
 [chat_peaks]
 bucket_seconds = 2.0
-min_prominence_multiplier = 2.0
+rolling_baseline_seconds = 300.0   # 5-minute local "what's normal lately" window
+surge_multiplier = 3.0              # peak must be 3x the rolling baseline
+absolute_floor = 3.0                # AND must clear this raw weight (dead-air guard)
 min_gap_seconds = 60.0
+target_count = 40                   # cap peaks at this; keep biggest surges
 hype_regex = "\\b(KEKW|LULW|PogChamp|POG|OMEGALUL|LMAO|LOL|W|WTF|HOLY|JESUS|NO WAY|LETS GO|LETSGO|GG)\\b"
 
 [candidates]

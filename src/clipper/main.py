@@ -99,8 +99,11 @@ def run(url: str, work_root: Path, out_root: Path, no_review: bool, ranker_overr
     logger.info("Stage 5/9: chat peaks")
     detect_chat_peaks(work_dir / "chat.jsonl", dl.duration_seconds, work_dir,
                       bucket_seconds=cfg.chat_peaks.bucket_seconds,
-                      min_prominence_multiplier=cfg.chat_peaks.min_prominence_multiplier,
+                      rolling_baseline_seconds=cfg.chat_peaks.rolling_baseline_seconds,
+                      surge_multiplier=cfg.chat_peaks.surge_multiplier,
+                      absolute_floor=cfg.chat_peaks.absolute_floor,
                       min_gap_seconds=cfg.chat_peaks.min_gap_seconds,
+                      target_count=cfg.chat_peaks.target_count,
                       hype_regex=cfg.chat_peaks.hype_regex)
 
     logger.info("Stage 6/9: candidates")

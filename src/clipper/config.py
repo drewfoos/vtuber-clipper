@@ -25,8 +25,11 @@ class AudioPeaksConfig(BaseModel):
 
 class ChatPeaksConfig(BaseModel):
     bucket_seconds: float = 2.0
-    min_prominence_multiplier: float = 2.0
-    min_gap_seconds: float = 30.0
+    rolling_baseline_seconds: float = 300.0  # 5-min local "what's normal lately" window
+    surge_multiplier: float = 3.0            # peak must be N x the rolling baseline
+    absolute_floor: float = 3.0              # AND must clear this raw weight (dead-air guard)
+    min_gap_seconds: float = 60.0
+    target_count: int = 40                   # cap peaks at this; keep biggest surges
     hype_regex: str = r"\b(KEKW|LULW|PogChamp|POG|OMEGALUL|LMAO|LOL|W|WTF|HOLY|JESUS|NO WAY|LETS GO|LETSGO|GG)\b"
 
 
