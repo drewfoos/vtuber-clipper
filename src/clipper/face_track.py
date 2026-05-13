@@ -55,57 +55,69 @@ def track_face(
         return out
 
     import mediapipe as mp
+    from mediapipe.tasks import python as mp_python
+    from mediapipe.tasks.python import vision
+
+    model_path = Path(__file__).resolve().parent / "assets" / "models" / "blaze_face_short_range.tflite"
+    if not model_path.exists():
+        raise FileNotFoundError(f"BlazeFace model missing: {model_path}")
 
     ranked = read_json(ranked_path)
-    detector = mp.solutions.face_detection.FaceDetection(
-        model_selection=0, min_detection_confidence=min_confidence
+    base_options = mp_python.BaseOptions(model_asset_path=str(model_path))
+    options = vision.FaceDetectorOptions(
+        base_options=base_options,
+        min_detection_confidence=min_confidence,
     )
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"could not open {video_path}")
+    frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     result: dict[str, dict] = {}
     try:
-        for clip in ranked:
-            cid = clip["id"]
-            t_start = float(clip["t_start_refined"])
-            t_end = float(clip["t_end_refined"])
-            sample_interval = 1.0 / fps
-            track: list[dict] = []
-            t_local = 0.0
-            while t_start + t_local < t_end:
-                cap.set(cv2.CAP_PROP_POS_MSEC, (t_start + t_local) * 1000.0)
-                ok, frame = cap.read()
-                if not ok:
-                    break
-                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                results = detector.process(rgb)
-                if results.detections:
-                    det = results.detections[0]
-                    bbox = det.location_data.relative_bounding_box
-                    track.append({
-                        "t": round(t_local, 3),
-                        "x": float(bbox.xmin + bbox.width / 2),
-                        "y": float(bbox.ymin + bbox.height / 2),
-                        "bbox_w": float(bbox.width),
-                        "bbox_h": float(bbox.height),
-                    })
-                else:
-                    track.append({
-                        "t": round(t_local, 3),
-                        "x": None, "y": None, "bbox_w": None, "bbox_h": None,
-                    })
-                t_local += sample_interval
-            result[cid] = {
-                "fps_sampled": fps,
-                "track": track,
-                "summary": _summarize_track(track),
-            }
-            logger.info(f"face_track {cid}: hit_rate={result[cid]['summary']['hit_rate']:.0%}")
+        with vision.FaceDetector.create_from_options(options) as detector:
+            for clip in ranked:
+                cid = clip["id"]
+                t_start = float(clip["t_start_refined"])
+                t_end = float(clip["t_end_refined"])
+                sample_interval = 1.0 / fps
+                track: list[dict] = []
+                t_local = 0.0
+                while t_start + t_local < t_end:
+                    cap.set(cv2.CAP_PROP_POS_MSEC, (t_start + t_local) * 1000.0)
+                    ok, frame = cap.read()
+                    if not ok:
+                        break
+                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                    detect_result = detector.detect(mp_image)
+                    if detect_result.detections:
+                        det = detect_result.detections[0]
+                        bbox = det.bounding_box  # PIXEL coords now
+                        # Normalize to [0, 1] like the legacy API did.
+                        track.append({
+                            "t": round(t_local, 3),
+                            "x": float((bbox.origin_x + bbox.width / 2) / frame_w),
+                            "y": float((bbox.origin_y + bbox.height / 2) / frame_h),
+                            "bbox_w": float(bbox.width / frame_w),
+                            "bbox_h": float(bbox.height / frame_h),
+                        })
+                    else:
+                        track.append({
+                            "t": round(t_local, 3),
+                            "x": None, "y": None, "bbox_w": None, "bbox_h": None,
+                        })
+                    t_local += sample_interval
+                result[cid] = {
+                    "fps_sampled": fps,
+                    "track": track,
+                    "summary": _summarize_track(track),
+                }
+                logger.info(f"face_track {cid}: hit_rate={result[cid]['summary']['hit_rate']:.0%}")
     finally:
         cap.release()
-        detector.close()
 
     write_json(out, result)
     logger.info(f"Wrote face_track for {len(result)} clips to {out}")

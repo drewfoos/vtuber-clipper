@@ -39,3 +39,28 @@ def test_encode_clip_produces_file_at_profile_size(tmp_path: Path):
     )
     w, h = res.stdout.strip().split(",")
     assert (int(w), int(h)) == (540, 960)
+
+
+def test_encode_clip_with_crop_x_offset_produces_file(tmp_path: Path):
+    """Encode with an explicit crop_x_norm should still produce a valid file of the profile size."""
+    import subprocess
+    src = tmp_path / "src.mp4"
+    subprocess.run([
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-f", "lavfi", "-i", "testsrc=size=1920x1080:rate=30:duration=2",
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        str(src),
+    ], check=True)
+
+    out = tmp_path / "out.mp4"
+    encode_clip(src, t_start=0.0, duration=1.0, out=out, profile=PREVIEW, crop_x_norm=0.85)
+    assert out.exists()
+    res = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height", "-of", "csv=p=0", str(out)],
+        capture_output=True, text=True, check=True,
+    )
+    w, h = res.stdout.strip().split(",")
+    assert (int(w), int(h)) == (540, 960)

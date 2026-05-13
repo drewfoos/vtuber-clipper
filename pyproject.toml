@@ -35,7 +35,7 @@ clipper = "clipper.main:cli"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"clipper" = ["web/*.html", "web/*.css", "web/*.js", "assets/emojis/*.png", "config.toml"]
+"clipper" = ["web/*.html", "web/*.css", "web/*.js", "assets/emojis/*.png", "config.toml", "assets/models/*.tflite"]
 
 [tool.setuptools]
 include-package-data = true

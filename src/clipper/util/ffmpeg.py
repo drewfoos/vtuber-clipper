@@ -35,16 +35,30 @@ def encode_clip(
     profile: EncodeProfile,
     subtitles_path: Path | None = None,
     extra_filters: list[str] | None = None,
+    crop_x_norm: float | None = None,
+    source_aspect: float = 16 / 9,
 ) -> None:
     """Encode a clip with crop+scale to profile dimensions, optional burned subtitles + extra filters.
+
+    If `crop_x_norm` is given (0..1), the crop window is offset along x to center
+    that normalized source-x position. Otherwise the crop is centered (current behavior).
 
     Uses -vf (simple filtergraph) when all filters are simple.  Switches to
     -filter_complex when any extra_filter uses named pad syntax (e.g. emoji_burst
     overlay chains), rewriting the pipeline so [in]/[out] labels are consistent.
     """
+    # Compute crop x offset. With force_original_aspect_ratio=increase to (W, H),
+    # the scaled intermediate is (H * source_aspect, H) when source is wider than target.
+    scaled_w = int(profile.height * source_aspect)
+    if crop_x_norm is not None:
+        center_x = crop_x_norm * scaled_w
+        crop_x = int(max(0, min(scaled_w - profile.width, center_x - profile.width / 2)))
+        crop_filter = f"crop={profile.width}:{profile.height}:{crop_x}:0"
+    else:
+        crop_filter = f"crop={profile.width}:{profile.height}"
     crop_scale = (
         f"scale={profile.width}:{profile.height}:force_original_aspect_ratio=increase,"
-        f"crop={profile.width}:{profile.height}"
+        f"{crop_filter}"
     )
 
     has_complex = extra_filters and any(_is_complex_filter(f) for f in extra_filters)

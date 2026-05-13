@@ -188,6 +188,11 @@ def finalize(work_dir: Path, out_root: Path) -> Path:
                     srt_path.write_text(generate_srt(words, clip["t_start"]), encoding="utf-8")
             else:
                 # tracking/static: use encode_clip with profile-based vertical-stripe crop.
+                # Tracking mode uses face_x offset; static uses centered crop.
+                crop_x = None
+                if layout_mode == "tracking" and face_summary.get("avg_x") is not None:
+                    crop_x = float(face_summary["avg_x"])
+
                 if mode in ("burned", "both"):
                     with tempfile.NamedTemporaryFile(
                         "w", suffix=".ass", delete=False, encoding="utf-8"
@@ -200,6 +205,7 @@ def finalize(work_dir: Path, out_root: Path) -> Path:
                             video, clip["t_start"], duration, burned_path, FINAL,
                             subtitles_path=ass_path,
                             extra_filters=ctx.extra_filters or None,
+                            crop_x_norm=crop_x,
                         )
                     finally:
                         ass_path.unlink(missing_ok=True)
@@ -213,6 +219,7 @@ def finalize(work_dir: Path, out_root: Path) -> Path:
                     encode_clip(
                         video, clip["t_start"], duration, clean_path, FINAL,
                         extra_filters=ctx.extra_filters or None,
+                        crop_x_norm=crop_x,
                     )
                     srt_path = base.with_suffix(".srt")
                     srt_path.write_text(generate_srt(words, clip["t_start"]), encoding="utf-8")
