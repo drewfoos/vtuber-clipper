@@ -21,8 +21,14 @@ def _normalize_message(raw: dict) -> dict:
 def download_chat(url: str, work_dir: Path) -> Path:
     """Fetch chat replay; write JSONL to work_dir/chat.jsonl.
 
-    Resilient to chat-downloader failures: catches exceptions, writes an empty
-    chat.jsonl, and continues. Downstream stages (chat_peaks, candidates, rank)
+    Uses a `.complete` sentinel file to distinguish "successfully finished" from
+    "started but errored / killed mid-run". A bare chat.jsonl with no sentinel
+    is treated as incomplete and retried on the next call. The sentinel is
+    written only after the iterator drains cleanly.
+
+    Resilient to chat-downloader failures: catches exceptions, logs a warning,
+    leaves the (possibly partial) jsonl on disk WITHOUT the sentinel — so a
+    future re-run will retry. Downstream stages (chat_peaks, candidates, rank)
     gracefully handle empty chat — the pipeline still produces clips, just with
     less chat-informed ranking.
 
@@ -30,13 +36,19 @@ def download_chat(url: str, work_dir: Path) -> Path:
     of appearing empty until the buffer flushes.
     """
     out = work_dir / "chat.jsonl"
-    if out.exists():
-        logger.info(f"Skipping chat download; {out} exists")
+    sentinel = work_dir / "chat.jsonl.complete"
+    if out.exists() and sentinel.exists():
+        logger.info(f"Skipping chat download; {out} exists and is marked complete")
         return out
+    if out.exists() and not sentinel.exists():
+        logger.info(f"Found incomplete {out} from a previous run; retrying")
+        out.unlink()
+
     count = 0
+    completed = False
     try:
         cd = ChatDownloader()
-        # buffering=1 → line-buffered; each `f.write(...)` flushes immediately.
+        # buffering=1 -> line-buffered; each f.write(...) flushes immediately.
         with out.open("w", encoding="utf-8", buffering=1) as f:
             for raw in cd.get_chat(url):
                 line = json.dumps(_normalize_message(raw), ensure_ascii=False)
@@ -44,14 +56,19 @@ def download_chat(url: str, work_dir: Path) -> Path:
                 count += 1
                 if count % 1000 == 0:
                     logger.info(f"  chat: {count} messages so far...")
+        completed = True
     except Exception as exc:
         logger.warning(
             f"chat-downloader failed after {count} messages: {exc!r}. "
-            f"Continuing with what we have; downstream stages handle empty chat."
+            f"Continuing with what we have; downstream stages handle empty chat. "
+            f"Re-running the pipeline will retry chat."
         )
-        # Ensure the file exists (possibly empty) so downstream skip-if-exists
-        # logic works on rerun without trying chat again.
         if not out.exists():
             out.touch()
-    logger.info(f"Wrote {count} chat messages to {out}")
+
+    if completed:
+        sentinel.touch()
+        logger.info(f"Wrote {count} chat messages to {out} (marked complete)")
+    else:
+        logger.info(f"Wrote {count} chat messages to {out} (NOT marked complete; will retry on re-run)")
     return out
