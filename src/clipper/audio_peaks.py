@@ -12,11 +12,20 @@ from clipper.util.logging import get_logger
 logger = get_logger(__name__)
 
 _TIME_RE = re.compile(r"pts_time:([\d.]+)")
-_RMS_RE = re.compile(r"lavfi\.astats\.Overall\.RMS_level=(-?\d+(?:\.\d+)?)")
+# Match a float OR "-inf"/"inf". Silent windows emit -inf from astats.
+_RMS_RE = re.compile(r"lavfi\.astats\.Overall\.RMS_level=(-?inf|-?\d+(?:\.\d+)?)")
+
+# Treat silence (-inf) as a very low dB floor so it participates in baseline math
+# instead of being silently dropped.
+_SILENCE_DB = -100.0
 
 
 def parse_rms_log(path: Path) -> Iterator[tuple[float, float]]:
-    """Yield (time_s, rms_db) pairs from an ffmpeg astats+ametadata output file."""
+    """Yield (time_s, rms_db) pairs from an ffmpeg astats+ametadata output file.
+
+    `-inf` RMS values (complete-silence windows) are emitted as `_SILENCE_DB`
+    so the time series stays evenly-sampled for rolling-median baseline math.
+    """
     current_time: float | None = None
     with path.open("r", encoding="utf-8") as f:
         for line in f:
@@ -26,7 +35,9 @@ def parse_rms_log(path: Path) -> Iterator[tuple[float, float]]:
                 continue
             rm = _RMS_RE.search(line)
             if rm and current_time is not None:
-                yield (current_time, float(rm.group(1)))
+                raw = rm.group(1)
+                db = _SILENCE_DB if "inf" in raw else float(raw)
+                yield (current_time, db)
 
 
 def _detect_from_samples(
@@ -93,11 +104,18 @@ def detect_audio_peaks(
     log_path = work_dir / "rms.log"
     if not log_path.exists():
         logger.info(f"Computing RMS log -> {log_path}")
+        # `length=0.25` defines the sliding window over which RMS is computed;
+        # `reset=1` resets cumulative stats after every frame so each emission
+        # describes one 250 ms slice. Combined with `asetnsamples=n=12000`
+        # (12000 samples at 48 kHz = 250 ms) we get exactly one metadata line
+        # per 250 ms of audio, which is what `_detect_from_samples` expects.
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
             "-i", str(audio_path),
             "-af",
-            f"astats=metadata=1:reset=0.25,ametadata=print:key=lavfi.astats.Overall.RMS_level:file={log_path.as_posix()}",
+            f"aresample=48000,asetnsamples=n=12000:p=0,"
+            f"astats=metadata=1:length=0.25:reset=1,"
+            f"ametadata=print:key=lavfi.astats.Overall.RMS_level:file={log_path.as_posix()}",
             "-f", "null", "-",
         ], check=True)
     samples = list(parse_rms_log(log_path))

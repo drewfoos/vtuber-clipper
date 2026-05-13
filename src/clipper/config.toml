@@ -14,7 +14,7 @@ merge_gap_seconds = 2.0
 [chat_peaks]
 bucket_seconds = 2.0
 min_prominence_multiplier = 2.0
-min_gap_seconds = 30.0
+min_gap_seconds = 60.0
 hype_regex = "\\b(KEKW|LULW|PogChamp|POG|OMEGALUL|LMAO|LOL|W|WTF|HOLY|JESUS|NO WAY|LETS GO|LETSGO|GG)\\b"
 
 [candidates]

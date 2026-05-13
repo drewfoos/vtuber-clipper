@@ -13,6 +13,25 @@ def test_parse_rms_log_yields_time_db_pairs():
     assert any(t == 2.25 and -13.0 <= db <= -12.0 for t, db in samples)
 
 
+def test_parse_rms_log_handles_inf_silence(tmp_path: Path):
+    """Silent windows emit `-inf` from astats; parser maps them to a low dB floor."""
+    log = tmp_path / "silent.log"
+    log.write_text(
+        "frame:0 pts_time:0\n"
+        "lavfi.astats.Overall.RMS_level=-inf\n"
+        "frame:1 pts_time:0.25\n"
+        "lavfi.astats.Overall.RMS_level=-20.0\n"
+        "frame:2 pts_time:0.5\n"
+        "lavfi.astats.Overall.RMS_level=-inf\n",
+        encoding="utf-8",
+    )
+    samples = list(parse_rms_log(log))
+    assert len(samples) == 3
+    assert samples[0][1] < -50  # silence floor
+    assert samples[1][1] == -20.0
+    assert samples[2][1] < -50
+
+
 def test_detect_audio_peaks_finds_obvious_peak(tmp_path: Path):
     import shutil
     audio_log = tmp_path / "rms.log"

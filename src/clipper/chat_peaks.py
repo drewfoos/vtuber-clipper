@@ -64,7 +64,16 @@ def detect_chat_peaks(
             weighted[idx] += _hype_weight(m.get("msg", ""), hype_pattern)
             bucket_messages[idx].append(m)
 
-    baseline = max(0.5, float(np.median(weighted)))
+    # Baseline floor matters a LOT for sparse chats. With a 0.5 floor, a single
+    # hype-weighted message (weight ~3) easily clears the prominence threshold,
+    # which yields hundreds of false peaks on low-traffic streams. We floor at
+    # the larger of (median, mean) so the baseline reflects actual chat volume
+    # rather than collapsing to the floor when most buckets are zero.
+    baseline = max(
+        2.0,
+        float(np.median(weighted)),
+        float(np.mean(weighted)) * 2,
+    )
     peaks_idx, props = find_peaks(
         weighted,
         prominence=baseline * min_prominence_multiplier,
