@@ -14,7 +14,6 @@ def fixture_work_dir(tmp_path: Path) -> Path:
     shutil.copy(FIXTURES / "fixture_video.mp4", work / "video.mp4")
     shutil.copy(FIXTURES / "ranked.sample.json", work / "ranked.json")
     shutil.copy(FIXTURES / "transcript.sample.json", work / "transcript.json")
-    shutil.copy(FIXTURES / "face_track.sample.json", work / "face_track.json")
     shutil.copy(FIXTURES / "audio_peaks.sample.json", work / "audio_peaks.json")
     shutil.copy(FIXTURES / "chat_peaks.sample.json", work / "chat_peaks.json")
     return work
