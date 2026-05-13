@@ -21,6 +21,7 @@ class AudioPeaksConfig(BaseModel):
     db_above_baseline: float = 6.0
     min_duration_seconds: float = 1.0
     merge_gap_seconds: float = 2.0
+    target_count: int = 40  # cap peaks; keep loudest (intensity dB-above-baseline)
 
 
 class ChatPeaksConfig(BaseModel):

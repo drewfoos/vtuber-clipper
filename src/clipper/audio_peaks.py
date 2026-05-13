@@ -95,8 +95,16 @@ def detect_audio_peaks(
     db_above_baseline: float = 6.0,
     min_duration_seconds: float = 1.0,
     merge_gap_seconds: float = 2.0,
+    target_count: int = 40,
 ) -> Path:
-    """Extract RMS, detect peaks, write audio_peaks.json."""
+    """Extract RMS, detect peaks, write audio_peaks.json.
+
+    Caps output at `target_count` by keeping the highest-intensity peaks
+    (dB above local baseline). For action games like Sekiro the raw detector
+    can produce hundreds of peaks (every attack, scream, music swell) which
+    floods downstream candidate-merging. The cap focuses on the loudest
+    "audio moments" — screams, big reactions — without dropping the category.
+    """
     out = work_dir / "audio_peaks.json"
     if out.exists():
         logger.info(f"Skipping audio peak detection; {out} exists")
@@ -125,6 +133,17 @@ def detect_audio_peaks(
         min_duration_seconds=min_duration_seconds,
         merge_gap_seconds=merge_gap_seconds,
     )
+
+    # Cap by intensity — keep the loudest "moments" and discard the long tail of
+    # mid-range peaks (especially common in action games / music streams).
+    total_detected = len(peaks)
+    if len(peaks) > target_count:
+        peaks.sort(key=lambda p: p["intensity"], reverse=True)
+        peaks = sorted(peaks[:target_count], key=lambda p: p["t_start"])
+
     write_json(out, peaks)
-    logger.info(f"Wrote {len(peaks)} audio peaks to {out}")
+    logger.info(
+        f"Wrote {len(peaks)} audio peaks to {out}"
+        + (f" (capped from {total_detected})" if total_detected > len(peaks) else "")
+    )
     return out

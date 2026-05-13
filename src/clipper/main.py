@@ -94,7 +94,8 @@ def run(url: str, work_root: Path, out_root: Path, no_review: bool, ranker_overr
     detect_audio_peaks(dl.audio_path, work_dir,
                        db_above_baseline=cfg.audio_peaks.db_above_baseline,
                        min_duration_seconds=cfg.audio_peaks.min_duration_seconds,
-                       merge_gap_seconds=cfg.audio_peaks.merge_gap_seconds)
+                       merge_gap_seconds=cfg.audio_peaks.merge_gap_seconds,
+                       target_count=cfg.audio_peaks.target_count)
 
     logger.info("Stage 5/9: chat peaks")
     detect_chat_peaks(work_dir / "chat.jsonl", dl.duration_seconds, work_dir,

@@ -57,6 +57,47 @@ def test_detect_audio_peaks_empty_when_flat(tmp_path: Path):
     assert peaks == []
 
 
+def test_target_count_caps_audio_peaks_by_intensity(tmp_path: Path):
+    """When the detector finds many peaks, only the loudest target_count survive."""
+    from clipper.audio_peaks import detect_audio_peaks
+
+    # Build a synthetic rms.log with 10 distinct peaks of varying intensity over
+    # a long-enough silence so each peak is independently detected (>=1s).
+    lines = []
+    t = 0.0
+    # Each "block" has 8 baseline samples then 4 elevated samples (1 second elevated).
+    intensities = [-10, -8, -6, -4, -12, -14, -16, -18, -20, -22]
+    for intensity in intensities:
+        for _ in range(8):
+            lines.append(f"frame:0 pts_time:{t:.2f}\nlavfi.astats.Overall.RMS_level=-30.0")
+            t += 0.25
+        for _ in range(4):
+            lines.append(f"frame:0 pts_time:{t:.2f}\nlavfi.astats.Overall.RMS_level={intensity}")
+            t += 0.25
+
+    log = tmp_path / "rms.log"
+    log.write_text("\n".join(lines), encoding="utf-8")
+
+    # Pre-stage the rms.log so detect_audio_peaks doesn't invoke ffmpeg.
+    # Use a non-existent audio path; the function only runs ffmpeg if rms.log is missing.
+    out = detect_audio_peaks(
+        tmp_path / "nope.opus", tmp_path,
+        db_above_baseline=6.0,
+        min_duration_seconds=0.5,
+        merge_gap_seconds=0.5,
+        target_count=3,
+    )
+    import json
+    peaks = json.loads(out.read_text(encoding="utf-8"))
+    assert len(peaks) == 3
+    # Peaks should be the loudest three (intensities ~24, 22, 20 dB above baseline).
+    intensities_kept = sorted(p["intensity"] for p in peaks)
+    assert intensities_kept[-1] >= 23.0  # the -4 dB sample = 26 above -30 baseline
+    # Output is sorted by t_start, so verify chronological order.
+    starts = [p["t_start"] for p in peaks]
+    assert starts == sorted(starts)
+
+
 def _detect_from_log(log_path, *, db_above_baseline, min_duration_seconds, merge_gap_seconds):
     """Helper: bypass detect_audio_peaks's ffmpeg call to test detection logic directly."""
     from clipper.audio_peaks import _detect_from_samples

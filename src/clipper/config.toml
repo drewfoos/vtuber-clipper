@@ -10,6 +10,7 @@ compute_type = "float16"
 db_above_baseline = 6.0
 min_duration_seconds = 1.0
 merge_gap_seconds = 2.0
+target_count = 40                  # cap peaks; keep loudest dB-above-baseline
 
 [chat_peaks]
 bucket_seconds = 2.0
